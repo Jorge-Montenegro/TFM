@@ -1,4 +1,5 @@
-#---ALL LIBRARIES NEEDED---#
+#-----------------------------------------ALL LIBRARIES NEEDED-------------------------------------#
+
 #Array and Frames Libraries
 import pandas as pd
 import numpy as np
@@ -44,6 +45,8 @@ from statsmodels.tsa.stattools import adfuller
 from patsy import dmatrices
 #Regular Expressions Libraries
 import re
+
+#--------------------------------------------------------------------------------------------------#
 
 #--------------------------------FUNCTIONS FOR VISUALIZATION PURPOSE-------------------------------#    
 
@@ -200,8 +203,54 @@ def draw_distribution(df, columns):
             sns.histplot(df[column], bins= bins, kde=True, stat= "density", ax= ax[i])
         ax[i].set_title(column)
     fig.tight_layout()
-    plt.subplots_adjust(top= 0.9)
+    plt.subplots_adjust(top= 0.92)
     fig.suptitle('Features Distributions', fontsize= 25)
+
+#--------------------------------------------------------------------------------------------------#
+
+def draw_distribution_evolution(df, column, condition):
+    """
+    DESCRIPTION
+      This function draw how the target variable has envolved across the time
+    ARGUMENTS
+      df: This is the DataFrame where the data is stored
+      column: This is the column list to draw
+    RETURN
+      Multiple distribution based on the columns values
+    """
+    
+    #We need to transform the parameter into a list in case there is only one column
+    pivots = list(df[condition].unique())
+    
+    #Prepare the Axes and size
+    #Always, it will be X columns by rows based on the numbers of variables. If we put x=2 means n row by 2 columns, 
+    #x=3 n rows by 3 columns and so on
+    x = 2
+    rows = 1 + int(len(pivots)/x) if len(pivots) % x == (x-1) else len(pivots) % x + int(len(pivots)/x)
+    fig, ax = plt.subplots(rows, x)
+    #Let's convert NxM Array into N
+    ax = ax.flat
+    fig.set_size_inches(20,30)
+    
+    #Colors available
+    colors = ['b', 'g', 'r', 'c', 'm', 'y', 'b', 'g', 'r', 'c', 'm', 'y', 'b', 'g', 'r', 'c', 'm', 'y', 
+             'b', 'g', 'r', 'c', 'm', 'y', 'b', 'g', 'r', 'c', 'm', 'y', 'b']
+    
+    #Iterate in all pivots
+    for i, pivot in enumerate(pivots):
+        for j in range(i+1):
+            #Get the bins for the variable
+            bins = np.histogram_bin_edges(df[df[condition] == pivots[j]][column], bins= 'stone')
+            sns.histplot(df[df[condition] == pivots[j]][column], bins= bins, 
+                         kde= True, stat= "density", ax= ax[i], color= colors[j], alpha= 0.2)
+        title = 'From ' + str(pivot)
+        if len(range(i)) > 0:
+            title = 'From ' + str(pivots[0]) + ' to ' + str(pivot)
+        ax[i].set_title(title)
+    
+    fig.tight_layout()
+    plt.subplots_adjust(top= 0.95)
+    fig.suptitle(f'{column} distribution across {condition}', fontsize= 25)
 
 #--------------------------------------------------------------------------------------------------#
 
@@ -236,7 +285,7 @@ def draw_correlation(df, columns, target):
         ax[i].set_title(f'{column} correlation with {list(target)[0]}')
         
     fig.tight_layout()
-    plt.subplots_adjust(top= 0.9)
+    plt.subplots_adjust(top= 0.92)
     fig.suptitle('Correlation Analysis', fontsize= 25)
 
 #--------------------------------------------------------------------------------------------------#
@@ -255,6 +304,15 @@ def get_bins(df, column):
     
     #Formula is Max Value - Min Value / Number of Observations
     return int((df[column].max() - df[column].min()) / len(df[column]))
+
+#--------------------------------------------------------------------------------------------------#
+
+#This function is not used for it was needed in the past. It is a backtracking function
+def max_closest_number(n, x= 1):
+    if int(n // x) <= 10:
+        return (int(n // x) + 1) * x
+    else:
+        return max_closest_number (n, x * 10)
 
 #--------------------------------------------------------------------------------------------------#
 
