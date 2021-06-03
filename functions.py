@@ -42,6 +42,7 @@ from statsmodels.graphics.tsaplots import plot_acf
 from statsmodels.graphics.tsaplots import plot_pacf
 from statsmodels.tsa.seasonal import seasonal_decompose
 from statsmodels.tsa.stattools import adfuller
+from statsmodels.tsa.arima.model import ARIMA
 from patsy import dmatrices
 #Regular Expressions Libraries
 import re
@@ -120,8 +121,8 @@ def draw_autocorrelation(df, mode, lags):
         plot_pacf(df[df.columns[-1]], lags= lags)
     
     #Horizontal lines around 0.2 correlation threshold
-    plt.hlines(0.2, 0, lags, color= 'r', linestyles= 'dotted', linewidths= 5, alpha=0.5)
-    plt.hlines(-0.2, 0, lags, color= 'r', linestyles= 'dotted', linewidths= 5, alpha=0.5)
+    plt.hlines(0.2, 0, lags, color= 'r', linestyles= 'dotted', linewidths= 3, alpha=0.5)
+    plt.hlines(-0.2, 0, lags, color= 'r', linestyles= 'dotted', linewidths= 3, alpha=0.5)
     plt.show()
 
 #--------------------------------------------------------------------------------------------------#
@@ -232,7 +233,7 @@ def draw_distribution_evolution(df, column, condition):
     ax = ax.flat
     fig.set_size_inches(20,30)
     
-    #Colors available
+    #Colors available - 31 possible different options in case we want to see the distribution by Day
     colors = ['b', 'g', 'r', 'c', 'm', 'y', 'b', 'g', 'r', 'c', 'm', 'y', 'b', 'g', 'r', 'c', 'm', 'y', 
              'b', 'g', 'r', 'c', 'm', 'y', 'b', 'g', 'r', 'c', 'm', 'y', 'b']
     
@@ -242,12 +243,20 @@ def draw_distribution_evolution(df, column, condition):
             #Get the bins for the variable
             bins = np.histogram_bin_edges(df[df[condition] == pivots[j]][column], bins= 'stone')
             sns.histplot(df[df[condition] == pivots[j]][column], bins= bins, 
-                         kde= True, stat= "density", ax= ax[i], color= colors[j], alpha= 0.2)
+                         kde= True, stat= "count", ax= ax[i], color= colors[j], alpha= 0.2)
+            
+            #Vertical line with the median
+            #Get the most common value
+            ymax = (np.histogram(df[df[condition] == pivots[j]][column], bins= bins, density= False)[0].max()) * 1.25
+            ax[i].vlines(df[df[condition] == pivots[j]][column].median(), 0, ymax, color= colors[j], 
+                   linestyles= 'solid', linewidths= 2, alpha=0.9)
+        
+        #Title
         title = 'From ' + str(pivot)
         if len(range(i)) > 0:
             title = 'From ' + str(pivots[0]) + ' to ' + str(pivot)
         ax[i].set_title(title)
-    
+            
     fig.tight_layout()
     plt.subplots_adjust(top= 0.95)
     fig.suptitle(f'{column} distribution across {condition}', fontsize= 25)
