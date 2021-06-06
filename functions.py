@@ -630,6 +630,163 @@ def dataframe_preparation(df):
 
 #--------------------------------------------------------------------------------------------------#
 
+#---------------------------------FUNCTIONS FOR ARIMA MODELS PURPOSE-------------------------------#
+
+#Get the Train and Test with the better lags considering a maximum of iterations for ARIMA model
+def arma(df, column, max_lags):
+    """
+    DESCRIPTION
+      This function creates an ARIMA model
+    ARGUMENTS
+      df: This is the DataFrame from get train and test data
+      column: This is the target variable
+      max_lags: Numer of maximun iteration to find the best lag
+    RETURN
+      A pair of DataFrames, Train and Test with Target Variable and Target Predicted using best lag
+    """
+    
+    #Max error for comparing
+    best_RMSE = 100000000000
+    best_p = -1
+
+    for i in range(1, max_lags):
+        #Prepare the data adding the lags values
+        data = arma_model(df, column, i)
+        #Split Train and Test
+        X_train, y_train, X_test, y_test = arma_preparation_split(data)
+        #Train model
+        data_train, data_test = arma_train (X_train, y_train, X_test, y_test, column)
+        
+        #Get error
+        RMSE = arma_rmse(data_train, column)
+        
+        #If it is better get the better RMSE and lag
+        if(RMSE < best_RMSE):
+            best_RMSE = RMSE
+            best_p = i
+    
+    #Show best RMSE and lag
+    print(f'Best RMSE:{RMSE} and lags:{best_p}')
+    
+    #Return Train and Test
+    return data_train, data_test
+
+#--------------------------------------------------------------------------------------------------#
+
+#Create the lagged variables for a specific target
+def arma_model(df, column, lags):
+    """
+    DESCRIPTION
+      This function creates a new DataFrame with the lagged variables
+    ARGUMENTS
+      df: This is the DataFrame from get train and test data
+      column: This is the target variable
+      lags: Numer of lags
+    RETURN
+      A new DataFrame with the lagged variables
+    """
+    
+    data = df[[column]].copy()
+    
+    #Generating the lagged terms
+    for i in range(1, lags + 1):
+        data[f'{column}-{i}'] = data[column].shift(i)
+    
+    #Dropna after the lagging
+    data.dropna(inplace= True)
+    
+    return data
+
+#--------------------------------------------------------------------------------------------------#
+
+#Train and Split for Arima
+def arma_preparation_split(df):
+    """
+    DESCRIPTION
+      This function returns the X_train, y_train, X_test and y_test for training
+    ARGUMENTS
+      df: This is the DataFrame from get train and test data
+    RETURN
+      X_train DataFrame with the lagged variables, y_train target variable and
+      X_test DataFrame with the lagged variables to test the trained model and y_test with the real target value
+    """
+    
+    #A copy of the DataFrame    
+    #Important DataFrame structure has the lagged values column 2, 3 and so on
+    #Let's sort the DataFrame in a more natural way, first X and the last column y
+    data = df[df.columns[::-1]].copy()
+    
+    #We pick 80% of the sample
+    sample_size = len(data)
+    train_size = (int)(0.8 * sample_size)
+    
+    #Split Train and Test
+    #In order to keep the same Index, we need to reset index in Test but we will do it in Train as well
+    data_train = pd.DataFrame(data[0:train_size]).reset_index(drop= True)
+    data_test = pd.DataFrame(data[train_size:sample_size]).reset_index(drop= True)
+    
+    #Split Train and Test - No trained yet
+    X_train, y_train = data_preparation(data_train)
+    X_test, y_test = data_preparation(data_test)
+    
+    #All ready for training in next step
+    return X_train, y_train, X_test, y_test
+
+#--------------------------------------------------------------------------------------------------#
+
+#This function train the ARIMA model
+def arma_train (X_train, y_train, X_test, y_test, column):
+    """
+    DESCRIPTION
+      This function returns two DataFrames, data_train with y_real and y_predict and data_test with y_real and y_predict
+    ARGUMENTS
+      X_train: DataFrame with the lagged variables for training
+      y_train: Target variable for training
+      X_test: DataFrame with the lagged variables for testing
+      y_test: Target variable for testing
+      column: This is the target variable
+    RETURN
+      A pair of DataFrames, Train and Test with Target Variable and Target Predicted
+    """
+    
+    #Let's prepare the returned DataFrames
+    data_train = pd.DataFrame()
+    data_test = pd.DataFrame()
+    
+    #Model and training    
+    lr = LinearRegression()
+    lr.fit(X_train, y_train)
+    
+    #Coefficients of the Regression
+    coefficients  = lr.coef_
+    intercept = lr.intercept_
+    
+    #Create the DataFrame with the y_real and y_predict for train
+    data_train[column] = y_train
+    data_train[f'{column}_predicted'] = X_train.dot(coefficients) + intercept
+    #Create the DataFrame with the y_real and y_predict for test
+    data_test[column] = y_test
+    data_test[f'{column}_predicted'] = X_test.dot(coefficients) + intercept
+    
+    #Return train and test
+    return data_train, data_test    
+
+#--------------------------------------------------------------------------------------------------#
+
+#This function return the RMSE
+def arma_rmse(df, column):
+    """
+    DESCRIPTION
+      This function returns the RMSE between y_real and y_predict
+    ARGUMENTS
+      df: This is the DataFrame where to calculate the RMSE
+    RETURN
+      Root mean square error
+    """
+    return np.sqrt(mean_squared_error(df[column], df[f'{column}_predicted']))
+
+#--------------------------------------------------------------------------------------------------#
+
 #------------------------------FUNCTIONS FOR MACHINE LEARNING PURPOSE------------------------------#
 
 #Variance features analysis
@@ -773,7 +930,7 @@ def test_adf(df, column):
     
     print('** Augmented Dickey-Fuller Test **\n')
     for i in t_interval:
-        print(f'T-test: {t_test} {greater_smaller(t_test, t_interval[i])} Confidence Interval: {t_interval[i]} - Result: {check(t_test, t_interval[i])}')
+        print(f'T-test: {t_test} {greater_smaller(t_test, t_interval[i])} Confidence Interval[{i}]: {t_interval[i]} - Result: {check(t_test, t_interval[i])}')
     
     print(f'\nP-Value: {p_value} {greater_smaller(p_value, 0.05)} 0.05 - Result: {check(p_value, 0.05)}')  
 
