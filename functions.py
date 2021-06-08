@@ -645,9 +645,11 @@ def arma(df, column, max_lags):
       A pair of DataFrames, Train and Test with Target Variable and Target Predicted using best lag
     """
     
-    #Max error for comparing
+    #Best Model
     best_RMSE = 100000000000
     best_p = -1
+    best_data_train = pd.DataFrame()
+    best_data_test = pd.DataFrame()
 
     for i in range(1, max_lags):
         #Prepare the data adding the lags values
@@ -664,12 +666,14 @@ def arma(df, column, max_lags):
         if(RMSE < best_RMSE):
             best_RMSE = RMSE
             best_p = i
+            best_data_train = data_train
+            best_data_test = data_test
     
     #Show best RMSE and lag
     print(f'Best RMSE:{RMSE} and lags:{best_p}')
     
     #Return Train and Test
-    return data_train, data_test
+    return best_data_train, best_data_test
 
 #--------------------------------------------------------------------------------------------------#
 
@@ -694,6 +698,8 @@ def arma_model(df, column, lags):
     
     #Dropna after the lagging
     data.dropna(inplace= True)
+    #Reset Index
+    data.reset_index(drop= True)
     
     return data
 
