@@ -43,9 +43,13 @@ from statsmodels.graphics.tsaplots import plot_pacf
 from statsmodels.tsa.seasonal import seasonal_decompose
 from statsmodels.tsa.stattools import adfuller
 from statsmodels.tsa.arima.model import ARIMA
+from statsmodels.tsa.statespace.sarimax import SARIMAX
 from patsy import dmatrices
 #Regular Expressions Libraries
 import re
+#Avoid warnings
+import warnings
+warnings.filterwarnings('ignore')
 
 #--------------------------------------------------------------------------------------------------#
 
@@ -390,7 +394,7 @@ def draw_least_squares_polynomial(df, column, degree):
     """
     
     #Calculate the parameters
-    x = df.index
+    x = df.reset_index().index
     #Lets prepare a polynomial regression line for Revenue
     y = df[column]
     polynomial_coef = np.polyfit(x, y, degree)
@@ -402,8 +406,8 @@ def draw_least_squares_polynomial(df, column, degree):
     ax.set_title(f'{column} and Polynomial Adjustment')
     ax.set_xlabel('Obervations Range') 
     ax.set_ylabel(column)
-    plt.plot(x, y)
-    plt.plot(x, backtracking_polynomial_parameters(polynomial_coef, len(polynomial_coef), x), c= 'r', linewidth= 3)
+    plt.plot(df.index, y)
+    plt.plot(df.index, backtracking_polynomial_parameters(polynomial_coef, len(polynomial_coef), x), c= 'r', linewidth= 3)
 
 #--------------------------------------------------------------------------------------------------#
 
@@ -490,8 +494,10 @@ def split_dates_by_columns(df, column):
     #Let's take all columns except the Date one
     columns = set(df.columns) - set([column])
     
-    #Return the merge Dataframes
-    return pd.concat([data, df[columns]], axis= 1)
+    #Return the merge Dataframes with the Date Index
+    data = pd.concat([data, df[columns]], axis= 1)
+    data.set_index(df[column], inplace= True)
+    return data
 
 #--------------------------------------------------------------------------------------------------#
 
@@ -728,8 +734,10 @@ def arma_preparation_split(df):
     
     #Split Train and Test
     #In order to keep the same Index, we need to reset index in Test but we will do it in Train as well
-    data_train = pd.DataFrame(data[0:train_size]).reset_index(drop= True)
-    data_test = pd.DataFrame(data[train_size:sample_size]).reset_index(drop= True)
+    #data_train = pd.DataFrame(data[0:train_size]).reset_index(drop= True)
+    #data_test = pd.DataFrame(data[train_size:sample_size]).reset_index(drop= True)
+    data_train = pd.DataFrame(data[0:train_size])
+    data_test = pd.DataFrame(data[train_size:sample_size])
     
     #Split Train and Test - No trained yet
     X_train, y_train = data_preparation(data_train)
@@ -741,7 +749,7 @@ def arma_preparation_split(df):
 #--------------------------------------------------------------------------------------------------#
 
 #This function train the ARIMA model
-def arma_train (X_train, y_train, X_test, y_test, column):
+def arma_train(X_train, y_train, X_test, y_test, column):
     """
     DESCRIPTION
       This function returns two DataFrames, data_train with y_real and y_predict and data_test with y_real and y_predict
