@@ -50,6 +50,8 @@ import re
 #Avoid warnings
 import warnings
 warnings.filterwarnings('ignore')
+#Progress Bar
+from tqdm.notebook import tqdm
 
 #--------------------------------------------------------------------------------------------------#
 
@@ -565,6 +567,7 @@ def group_programs(df):
 
 #--------------------------------------------------------------------------------------------------#
 
+#This function is not needed
 #Add two new qualitative columns, Black Friday=1 and Cyber Monday=1
 def get_black_friday_cyber_monday(df):
     """
@@ -593,6 +596,65 @@ def get_black_friday_cyber_monday(df):
         data['Cyber_Monday'][data['Year'].isin(cm_dict[week]) & (data['Week'] == week)] = 1
     
     return data
+
+#--------------------------------------------------------------------------------------------------#
+
+#Create a new DataFrame with the BlackFriday, Easter and Covid columns
+def get_seasonal_features(df):
+    """
+    DESCRIPTION
+      This function returns a new DataFrame with a new Black Friday Week, Easter and Covid
+    ARGUMENTS
+      df: This is the original DataFrame to transform
+    RETURN
+      A new DataFrame with 3 new columns
+    """
+    
+    #Constants of the seasonal variables
+    bf_date_list = ['2015-11-27', '2016-11-25', '2017-11-24', '2018-11-23', '2019-11-29', '2020-11-27']
+    easter_date_list = ['2015-03-30', '2016-03-21', '2017-04-10', '2018-03-26', '2019-04-15', '2020-04-06', '2021-03-29']
+    covid_date_range = ['2020-03-14', '2020-06-21']
+    
+    #Create a new DataFrame same Index
+    data = pd.DataFrame(index= data_small.index)
+    
+    #To initialize the features
+    data['Black_Friday'] = 0
+    data['Easter'] = 0
+    data['Covid'] = 0
+    
+    #Create the list of date ranges
+    bf_week_dates = [(np.array(date, dtype=np.datetime64) + pd.to_timedelta(np.arange(4), 'D')) for date in bf_date_list]
+    easter_week_dates = [(np.array(date, dtype=np.datetime64) + pd.to_timedelta(np.arange(8), 'D')) \ 
+    for date in easter_date_list]
+
+    
+    data['Black_Friday'] = 0
+    data['Cyber_Monday'] = 0
+    #
+    for week in bf_dict:
+        data['Black_Friday'][data['Year'].isin(bf_dict[week]) & (data['Week'] == week)] = 1
+    for week in cm_dict:
+        data['Cyber_Monday'][data['Year'].isin(cm_dict[week]) & (data['Week'] == week)] = 1
+    
+    return data
+
+#--------------------------------------------------------------------------------------------------#
+
+#Return a list of DataIndex
+def create_date_range(dates, range_type, range_lenght):
+    """
+    DESCRIPTION
+      This function returns a list with DataIndex elements considering the lengh and type of range
+    ARGUMENTS
+      dates: The original date list
+      range_type: For example Days 'D'
+      range_lenght: How many new DateIndex considering the type
+    RETURN
+      A list with DataIndex ranges
+    """    
+    
+    return [(np.array(date, dtype=np.datetime64) + pd.to_timedelta(np.arange(range_length), range_type)) for date in dates]
 
 #--------------------------------------------------------------------------------------------------#
 
