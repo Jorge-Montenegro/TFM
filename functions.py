@@ -52,6 +52,8 @@ import warnings
 warnings.filterwarnings('ignore')
 #Progress Bar
 from tqdm.notebook import tqdm
+#Serilizing
+import pickle
 
 #--------------------------------------------------------------------------------------------------#
 
@@ -616,7 +618,7 @@ def get_seasonal_features(df):
     covid_date_range = ['2020-03-14', '2020-06-21']
     
     #Create a new DataFrame same Index
-    data = pd.DataFrame(index= data_small.index)
+    data = pd.DataFrame(index= df.index)
     
     #To initialize the features
     data['Black_Friday'] = 0
@@ -624,25 +626,25 @@ def get_seasonal_features(df):
     data['Covid'] = 0
     
     #Create the list of date ranges
-    bf_week_dates = [(np.array(date, dtype=np.datetime64) + pd.to_timedelta(np.arange(4), 'D')) for date in bf_date_list]
-    easter_week_dates = [(np.array(date, dtype=np.datetime64) + pd.to_timedelta(np.arange(8), 'D')) \ 
-    for date in easter_date_list]
-
+    bf_week_dates = create_date_range(bf_date_list, 'D', 4)
+    easter_week_dates = create_date_range(easter_date_list, 'D', 8)
     
-    data['Black_Friday'] = 0
-    data['Cyber_Monday'] = 0
-    #
-    for week in bf_dict:
-        data['Black_Friday'][data['Year'].isin(bf_dict[week]) & (data['Week'] == week)] = 1
-    for week in cm_dict:
-        data['Cyber_Monday'][data['Year'].isin(cm_dict[week]) & (data['Week'] == week)] = 1
+    #Apply the 1's values like OneHotEncoding
+    for range_date in bf_week_dates:
+        data['Black_Friday'][data.index.isin(range_date)] = 1
+       
+    for range_date in easter_week_dates:
+        data['Easter'][data.index.isin(range_date)] = 1
     
-    return data
+    data['Covid'].loc[covid_date_range[0]:covid_date_range[1]] = 1
+    
+    #Return new DataFrame
+    return pd.concat([df[df.columns[0:3]], data, df[df.columns[3:]]], axis= 1)
 
 #--------------------------------------------------------------------------------------------------#
 
 #Return a list of DataIndex
-def create_date_range(dates, range_type, range_lenght):
+def create_date_range(dates, range_type, range_length):
     """
     DESCRIPTION
       This function returns a list with DataIndex elements considering the lengh and type of range
@@ -773,6 +775,7 @@ def arma_model(df, column, lags):
 
 #--------------------------------------------------------------------------------------------------#
 
+#This method is for manual Arima
 #Train and Split for Arima
 def arma_preparation_split(df):
     """
@@ -798,6 +801,37 @@ def arma_preparation_split(df):
     #In order to keep the same Index, we need to reset index in Test but we will do it in Train as well
     #data_train = pd.DataFrame(data[0:train_size]).reset_index(drop= True)
     #data_test = pd.DataFrame(data[train_size:sample_size]).reset_index(drop= True)
+    data_train = pd.DataFrame(data[0:train_size])
+    data_test = pd.DataFrame(data[train_size:sample_size])
+    
+    #Split Train and Test - No trained yet
+    X_train, y_train = data_preparation(data_train)
+    X_test, y_test = data_preparation(data_test)
+    
+    #All ready for training in next step
+    return X_train, y_train, X_test, y_test
+
+#--------------------------------------------------------------------------------------------------#
+
+def sarimax_preparation_split(df):
+    """
+    DESCRIPTION
+      This function returns the X_train, y_train, X_test and y_test for training
+    ARGUMENTS
+      df: This is the DataFrame from get train and test data
+    RETURN
+      X_train DataFrame with the features, y_train target variable and
+      X_test DataFrame with the features to test the trained model and y_test with the real target value
+    """
+    
+    #A copy of the DataFrame    
+    data = df.copy()
+    
+    #We pick 90% of the sample
+    sample_size = len(data)
+    train_size = (int)(0.9 * sample_size)
+    
+    #Split Train and Test
     data_train = pd.DataFrame(data[0:train_size])
     data_test = pd.DataFrame(data[train_size:sample_size])
     
@@ -860,6 +894,94 @@ def arma_rmse(df, column):
       Root mean square error
     """
     return np.sqrt(mean_squared_error(df[column], df[f'{column}_predicted']))
+
+#--------------------------------------------------------------------------------------------------#
+
+#This function return the RMSE
+def sarimax_rmse(series_real, series_predicted):
+    """
+    DESCRIPTION
+      This function returns the RMSE between y_real and y_predict
+    ARGUMENTS
+      series_real: This is the real y
+      series_predicted: This is the predicted y
+    RETURN
+      Root mean square error
+    """
+    return np.sqrt(mean_squared_error(series_real, series_predicted))
+
+#--------------------------------------------------------------------------------------------------#
+
+#SARIMAX best parameters by testing all of the combinations
+def gridsearch_sarimax(endog, exog, arima_params, sarima_params, trend_paramgs):
+    """
+    DESCRIPTION
+      This function return a list of best AIC for SARIMAX model
+      CAUTION: You can run out memory, so you cannot put high values
+      This is a intensive method and a pickle file would be stored for continue in the last iteration
+    ARGUMENTS
+      endog: target values
+      exog: X features
+      arima_params: This is a dictionary with p, d, q range values. If you put 1, range means 0-1. The d value should be 2 up most
+      sarima_params: This is a dictionaty with P, D, Q and Season. Season is a list of values. The D value should be 2 up most
+      trend_params: This is a list of values ['n','c','t','ct']
+    RETURN
+      A dictionary with this format (p, d, q) - (P, D, Q, Season) - Trend
+      A pickle file will be stored in case the gridsearch crash or stopped abruptly - object.pkl
+    """
+    
+    #Pickle file
+    pickle_file = 'object.pkl'
+    
+    #Disctionary to return
+    test_aic = dict()
+    
+    #ARIMA Parameters
+    p = np.arange(arima_params['p'][0], arima_params['p'][1]) 
+    d = np.arange(arima_params['d'][0], arima_params['d'][1])
+    q = np.arange(arima_params['q'][0], arima_params['q'][1])
+    
+    #SARIMA Parameters
+    P = np.arange(sarima_params['P'][0], sarima_params['P'][1])
+    D = np.arange(sarima_params['D'][0], sarima_params['D'][1])
+    Q = np.arange(sarima_params['Q'][0], sarima_params['Q'][1])
+    seasons = sarima_params['S']
+    
+    #Trend Parameters
+    t = trend_paramgs
+    
+    #Progress Bar
+    pbar = tqdm()
+    pbar.reset(p.shape[0] * d.shape[0] * q.shape[0] * P.shape[0] * D.shape[0] * Q.shape[0] * len(t) * len(seasons))
+
+    for i in p:
+        for j in d:
+            for k in q:
+                for w in P:
+                    for a in D:
+                        for s in Q:
+                            for x in seasons:
+                                for freq in t:
+                                    try:
+                                        #SARIMAX Model
+                                        model = SARIMAX(endog= endog, exog= exog, order= (i, j, k), 
+                                                        seasonal_order= (w, a, s, x), trend= freq)
+                                        result = model.fit()
+                                        #Get AIC Metrics
+                                        test_aic[(i, j, k, '-', w, a, s, x, '-', freq)] = result.aic
+                                        
+                                        #Save the object for each iteration in case crash
+                                        object_to_pickle(test_aic, pickle_file)
+
+                                    except:
+                                        continue
+
+                                    #Progress Bar
+                                    pbar.update()        
+    #Progress Bar
+    pbar.refresh()
+    
+    return test_aic
 
 #--------------------------------------------------------------------------------------------------#
 
@@ -1010,6 +1132,48 @@ def test_adf(df, column):
     
     print(f'\nP-Value: {p_value} {greater_smaller(p_value, 0.05)} 0.05 - Result: {check(p_value, 0.05)}')  
 
+#--------------------------------------------------------------------------------------------------#
+
+#--------------------------------FUNCTIONS FOR SERIALIZING PURPOSE---------------------------------#
+
+#Serializing
+def object_to_pickle(pkl_object, pkl_file):
+    """
+    DESCRIPTION
+      This function saves the object into a pickle file
+    ARGUMENTS
+      pkl_object: Object to serialize
+      pkl_file: Pickle file name
+    RETURN
+      Nothing, it will create a pickle file
+    """
+    
+    pkl = open(pkl_file, 'wb')
+    pickle.dump(pkl_object, pkl)                     
+    pkl.close()
+
+#--------------------------------------------------------------------------------------------------#
+    
+#De-serializing
+def pickle_to_object(pkl_file):
+    """
+    DESCRIPTION
+      This function retrieves the pickle object
+    ARGUMENTS
+      pkl_file: Pickle file name
+    RETURN
+      De-serialize object
+    """    
+    
+    pkl = open(pkl_file, 'rb')     
+    pkl_object = pickle.load(pkl)
+    pkl.close()
+    return pkl_object
+
+#--------------------------------------------------------------------------------------------------#
+#--------------------------------------------------------------------------------------------------#
+#--------------------------------------------------------------------------------------------------#
+#--------------------------------------------------------------------------------------------------#
 #--------------------------------------------------------------------------------------------------#
 #--------------------------------------------------------------------------------------------------#
 #--------------------------------------------------------------------------------------------------#
