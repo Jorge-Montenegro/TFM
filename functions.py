@@ -604,7 +604,7 @@ def get_black_friday_cyber_monday(df):
 #--------------------------------------------------------------------------------------------------#
 
 #Create a new DataFrame with the BlackFriday, Easter and Covid columns
-def get_seasonal_features(df):
+def get_exogenous_features(df):
     """
     DESCRIPTION
       This function returns a new DataFrame with a new Black Friday Week, Easter and Covid
@@ -642,6 +642,30 @@ def get_seasonal_features(df):
     
     #Return new DataFrame
     return pd.concat([df[df.columns[0:3]], data, df[df.columns[3:]]], axis= 1)
+
+#--------------------------------------------------------------------------------------------------#
+
+#Create the lagged variables for a specific target
+def get_lag_features(df, column, lags):
+    """
+    DESCRIPTION
+      This function creates a new DataFrame with the lagged variables
+    ARGUMENTS
+      df: This is the DataFrame from get train and test data
+      column: This is the target variable
+      lags: list of number of lgas
+    RETURN
+      A new DataFrame with the lagged variables
+    """
+    
+    #Final DataFrame to return
+    data = pd.DataFrame()
+    
+    #Generating the lagged terms
+    for i in lags[::-1]:
+        data[f'{column[0:3]}-{i}'] = df[column].shift(i)
+    
+    return data
 
 #--------------------------------------------------------------------------------------------------#
 
@@ -1115,6 +1139,80 @@ def data_split(X, y):
 
 #--------------------------------------------------------------------------------------------------#
 
+#This function split the train and test returning the indexes
+def time_series_split(df, fold= 10):
+    """
+    DESCRIPTION
+      This function returns a list of indexes for train, test and split or cross validation
+    ARGUMENTS
+      df: DataFrame where to apply train and test split
+      fold: Number of splits, minumun 2. By default we are picking the 90%/10% which is fold= 10
+    RETURN
+      Two list, one with the Train_index and Test_index
+    """
+    #We are going to use K-fold but we are just picking first value
+    #K-fold cross-validator
+    kf = KFold(fold, shuffle=True)
+
+    #list of train and test indexes
+    train_index_list = list()
+    test_index_list = list()
+
+    #Train/Test cross-validation splits
+    for train_index, test_index in kf.split(data_model):
+        train_index_list.append(train_index)
+        test_index_list.append(test_index)
+        
+    return train_index_list, test_index_list
+
+#--------------------------------------------------------------------------------------------------#
+
+#Return the Xs and ys for test and train considering the Time Series Restrictions
+#https://robjhyndman.com/hyndsight/tscv/ thanks Sebas ;-)
+def time_series_train_test_split(df, lags):
+    """
+    DESCRIPTION
+      This function returns the set for training and test for Time Series
+    ARGUMENTS
+      df: DataFrame where to apply train and test split
+      train_index: This is the train index from a k-fold method
+      test_index: This is the test index from a k-fold method
+      lags: List with the lag features
+    RETURN
+      The X Train and Test and y Train and Test
+    """
+    
+    #Get the random split, it will return two different group of train and test because Kfold needs 2
+    #We will keep the first one always
+    train_index, test_index = time_series_split(df)
+    #Avoid errors ,pick the first results
+    train_index = train_index[0]
+    test_index = test_index[0]
+    
+    #We are going to remove from Train all dependencies with Test
+    #If we Y depends on Y-1, Y-2 and so on, we are going to remove those lag variables from Train
+    #Basically add the lad to the test index and remove it from the train
+    set_test_index = set()
+    set_train_index = set(train_index)
+    
+    for i in lags:
+        set_test_index.update(set(test_index + i))
+    
+    #New train index without test dependencies - IMPORTANT! New set is much smaller than the original one
+    new_train_index = list(set_train_index - set_test_index)
+    
+    #New split for Time Series - Using the new indexes
+    X, y = data_preparation(df)
+    X_train = X.iloc[new_train_index]
+    X_test = X.iloc[test_index]
+    y_train = y.iloc[new_train_index]
+    y_test = y.iloc[test_index]
+    
+    return X_train, X_test, y_train, y_test
+
+#--------------------------------------------------------------------------------------------------#
+
+#This function has to be revised
 #Return a normalized DataFrame based on two scaler Norm and Robust
 def data_normalization(df, scale_param):
     """
