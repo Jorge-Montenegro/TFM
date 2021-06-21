@@ -44,6 +44,8 @@ from statsmodels.tsa.seasonal import seasonal_decompose
 from statsmodels.tsa.stattools import adfuller
 from statsmodels.tsa.arima.model import ARIMA
 from statsmodels.tsa.statespace.sarimax import SARIMAX
+from statsmodels.tsa.statespace.varmax import VARMAX
+from statsmodels.tsa.holtwinters import ExponentialSmoothing
 from patsy import dmatrices
 #Regular Expressions Libraries
 import re
@@ -913,7 +915,7 @@ def sarimax_rmse(series_real, series_predicted):
 #--------------------------------------------------------------------------------------------------#
 
 #SARIMAX best parameters by testing all of the combinations
-def gridsearch_sarimax(endog, exog, arima_params, sarima_params, trend_paramgs):
+def gridsearch_sarimax(endog, exog, arima_params, sarima_params, trend_params):
     """
     DESCRIPTION
       This function return a list of best AIC for SARIMAX model
@@ -926,7 +928,7 @@ def gridsearch_sarimax(endog, exog, arima_params, sarima_params, trend_paramgs):
       sarima_params: This is a dictionaty with P, D, Q and Season. Season is a list of values. The D value should be 2 up most
       trend_params: This is a list of values ['n','c','t','ct']
     RETURN
-      A dictionary with this format (p, d, q) - (P, D, Q, Season) - Trend
+      A dictionary with this format key: (p, d, q) - (P, D, Q, Season) - Trend and value: AIC
       A pickle file will be stored in case the gridsearch crash or stopped abruptly - object.pkl
     """
     
@@ -948,7 +950,7 @@ def gridsearch_sarimax(endog, exog, arima_params, sarima_params, trend_paramgs):
     seasons = sarima_params['S']
     
     #Trend Parameters
-    t = trend_paramgs
+    t = trend_params
     
     #Progress Bar
     pbar = tqdm()
@@ -982,6 +984,70 @@ def gridsearch_sarimax(endog, exog, arima_params, sarima_params, trend_paramgs):
     pbar.refresh()
     
     return test_aic
+
+#--------------------------------------------------------------------------------------------------#
+
+#Triple Exponential Smooth best parameters by testing all of the combinations
+def gridsearch_tes(endog, trend_params, damped_params, seasonal_params, period_params, box_cox, bias_params):
+    """
+    DESCRIPTION
+      This function return a list of best RMSE for TES model
+      CAUTION: You can run out memory, so you cannot put high values
+      This is a intensive method and a pickle file would be stored for continue in the last iteration
+    ARGUMENTS
+      endog: target values
+      trend_params: List of values, Additive - add or Multiplicative - mul
+      damped_params: True or False
+      seasonal_params = List of values, Additive - add or Multiplicative - mul
+      period_params = List of periods, like 1, 2, 7, 28
+      box_cox = Box-Cox transformation, True or False
+      bias_params = True or False
+      
+    RETURN
+      A dictionary with this format key: (tren, damped, season, period, - box_cox, bias) and value: RMSE
+      A pickle file will be stored in case the gridsearch crash or stopped abruptly - object.pkl
+    """
+    
+    #Pickle file
+    pickle_file = 'object.pkl'
+    
+    #Disctionary to return
+    test_rmse = dict()
+    
+    #Progress Bar
+    pbar = tqdm()
+    pbar.reset(len(trend_params) * len(damped_params) * len(seasonal_params) * len(period_params) *
+              len(box_cox) * len(bias_params))
+    
+    for i in trend_params:
+        for j in damped_params:
+            for k in seasonal_params:
+                for w in period_params:
+                    for a in box_cox:
+                        for s in bias_params:
+                            try:
+                                #Triple Exponential Smooth Model
+                                model = ExponentialSmoothing(endog= endog, trend= i, damped= j, seasonal= k, 
+                                        seasonal_periods= w)
+                                result = model.fit(optimized= True, use_boxcox= a, remove_bias= s)
+                                #Get RMSE Metrics
+                                test_rmse[(i, j, k, w, '-', a, s)] = \
+                                    np.sqrt(mean_squared_error(endog, 
+                                        result.predict(start= endog.index[0], end= endog.index[-1])))
+
+                                #Save the object for each iteration in case crash
+                                object_to_pickle(test_rmse, pickle_file)
+
+                            except:
+                                continue
+                            
+                            #Progress Bar
+                            pbar.update()        
+    
+    #Progress Bar
+    pbar.refresh()
+    
+    return test_rmse
 
 #--------------------------------------------------------------------------------------------------#
 
