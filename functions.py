@@ -1139,8 +1139,30 @@ def data_split(X, y):
 
 #--------------------------------------------------------------------------------------------------#
 
+#Return the Xs and ys for the first fold of one Time Series
+def time_series_train_test_split(df, lags):
+    """
+    DESCRIPTION
+      This function returns the set for training and test for Time Series for the first fold
+    ARGUMENTS
+      df: DataFrame where to apply train and test split
+      lags: List with the lag features
+    RETURN
+      The X Train and Test and y Train and Test
+    """
+    
+    #Get the random split, it will return a list of pair tain and test k-folds
+    #We will keep the first one always
+    train_index_list, test_index_list = time_series_fold(df)
+    train_index = train_index_list[0]
+    test_index = test_index_list[0]
+    
+    return time_series_split(df, train_index, test_index, lags)
+
+#--------------------------------------------------------------------------------------------------#
+
 #This function split the train and test returning the indexes
-def time_series_split(df, fold= 10):
+def time_series_fold(df, fold= 10):
     """
     DESCRIPTION
       This function returns a list of indexes for train, test and split or cross validation
@@ -1148,7 +1170,7 @@ def time_series_split(df, fold= 10):
       df: DataFrame where to apply train and test split
       fold: Number of splits, minumun 2. By default we are picking the 90%/10% which is fold= 10
     RETURN
-      Two list, one with the Train_index and Test_index
+      Two list, one with all Train_index and Test_index combinations
     """
     #We are going to use K-fold but we are just picking first value
     #K-fold cross-validator
@@ -1169,7 +1191,7 @@ def time_series_split(df, fold= 10):
 
 #Return the Xs and ys for test and train considering the Time Series Restrictions
 #https://robjhyndman.com/hyndsight/tscv/ thanks Sebas ;-)
-def time_series_train_test_split(df, lags):
+def time_series_split(df, train_index, test_index, lags):
     """
     DESCRIPTION
       This function returns the set for training and test for Time Series
@@ -1181,13 +1203,6 @@ def time_series_train_test_split(df, lags):
     RETURN
       The X Train and Test and y Train and Test
     """
-    
-    #Get the random split, it will return two different group of train and test because Kfold needs 2
-    #We will keep the first one always
-    train_index, test_index = time_series_split(df)
-    #Avoid errors ,pick the first results
-    train_index = train_index[0]
-    test_index = test_index[0]
     
     #We are going to remove from Train all dependencies with Test
     #If we Y depends on Y-1, Y-2 and so on, we are going to remove those lag variables from Train
@@ -1212,20 +1227,21 @@ def time_series_train_test_split(df, lags):
 
 #--------------------------------------------------------------------------------------------------#
 
-#This function has to be revised
-#Return a normalized DataFrame based on two scaler Norm and Robust
-def data_normalization(df, scale_param):
+#Return scaled X_train and X_test based on three scaler Norm, Robust and Power
+def data_normalization(X_train, X_test, scale_param):
     """
     DESCRIPTION
-      This function returns a new DataFrame with all elements normalized based on scale method
+      This function X_train and X_test set normalized based on scale method
     ARGUMENTS
-      df: DataFrame to normalize
+      X_train: Train set to scale
+      X_test: Test set to scale
       scaler: Type of normalization:
        'norm': StandarScaler
        'robust': RobustScaler
        'power': PowerTransformer
     RETURN
-      New DataFrame normalized
+      X_train scaled
+      X_test scale
     """
     
     #Dictionaries of scaling methods
@@ -1234,9 +1250,16 @@ def data_normalization(df, scale_param):
                'power': PowerTransformer()}
     #Data Normalization
     scaler = methods[scale_param]
-    columns = df.columns
     
-    return pd.DataFrame(scaler.fit_transform(df), columns= columns)
+    #Train the scaler with the X_train data
+    scaler.fit(X_train)
+    
+    #Scale both sets
+    X_train_scaled = scaler.transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
+    
+    
+    return X_train_scaled, X_test_scaled
 
 #--------------------------------------------------------------------------------------------------#
 
