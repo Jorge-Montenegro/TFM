@@ -1155,8 +1155,7 @@ def data_preparation(df):
     ARGUMENTS
       df: This is the DataFrame from get train and test data
     RETURN
-      A new DataFrame with Xs Values: Year, Week, Black Friday, Cyber Monday, Direct, SEO, SEM, Affiliate, Email, Display
-      and Y Value: Revenue
+      A new DataFrame with Xs features and y target
       IMPORTANT: DataFrame columns order should be <all features><target> this mean, last column is the target
     """
     
