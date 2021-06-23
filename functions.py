@@ -438,6 +438,59 @@ def backtracking_polynomial_parameters(l, i, x):
 
 #--------------------------------------------------------------------------------------------------#
 
+#Draw a grid with Residual Diagnosis
+def draw_residuals_diagnosis(df, columns):
+    """
+    DESCRIPTION
+      This function draws a grid with four elements about residuals
+    ARGUMENTS
+      df: DataFrame where data is located
+      columns: This has target, predict and residuals
+    RETURN
+      Draw a grid with all residuals analysis
+    """
+    
+    #Just a pointer of the DataFrame
+    data = df
+    
+    #Get columns name
+    real = columns[0]
+    predicted = columns[1]
+    residuals = columns[2]
+    
+    fig, ax = plt.subplots(2, 2)
+    #Let's convert NxM Array into N
+    ax = ax.flat
+    
+    #First axe
+    ax[0].scatter(data[real], data[predicted])
+    ax[0].plot([data[real].min(), data[real].max()], [data[real].min(), data[real].max()], 
+             color= 'r', ls= 'dotted', lw= 2, alpha=0.5)
+    ax[0].set_xlabel(real)
+    ax[0].set_ylabel(predicted)
+    ax[0].set_title(f'{predicted} vs {real}')
+    
+    #Second axe
+    ax[1].scatter(data.index, data[residuals])
+    ax[1].hlines(0, data.index.min(), data.index.max(), color= 'r', linestyles= 'dotted', linewidths= 3, alpha=0.5)
+    ax[1].set_xlabel('Dates')
+    ax[1].set_ylabel(residuals)
+    ax[1].set_title(f'{residuals} of the model')
+    
+    #Third axe
+    data[residuals].plot(kind='kde', ax= ax[2])
+    ax[2].set_xlabel(residuals)
+    ax[2].set_title(f'{residuals} Distribution')
+    
+    #Fourth axe
+    sm.qqplot(data[residuals], fit= True, line= 'q', color= 'firebrick', alpha= 0.4, ax= ax[3]);
+    
+    fig.tight_layout()
+    plt.subplots_adjust(top= 0.9)
+    fig.suptitle('Residual Diagnosis', fontsize= 25)
+    
+#--------------------------------------------------------------------------------------------------#
+
 #------------------------------FUNCTIONS FOR DATA MANIPULATION PURPOSE-----------------------------#
 
 #Clean the zero Revenue in the original DataFrame
@@ -909,17 +962,7 @@ def arma_train(X_train, y_train, X_test, y_test, column):
 
 #--------------------------------------------------------------------------------------------------#
 
-#This function return the RMSE
-def arma_rmse(df, column):
-    """
-    DESCRIPTION
-      This function returns the RMSE between y_real and y_predict
-    ARGUMENTS
-      df: This is the DataFrame where to calculate the RMSE
-    RETURN
-      Root mean square error
-    """
-    return np.sqrt(mean_squared_error(df[column], df[f'{column}_predicted']))
+
 
 #--------------------------------------------------------------------------------------------------#
 
@@ -1181,7 +1224,7 @@ def time_series_fold(df, fold= 10):
     test_index_list = list()
 
     #Train/Test cross-validation splits
-    for train_index, test_index in kf.split(data_model):
+    for train_index, test_index in kf.split(df):
         train_index_list.append(train_index)
         test_index_list.append(test_index)
         
@@ -1227,6 +1270,91 @@ def time_series_split(df, train_index, test_index, lags):
 
 #--------------------------------------------------------------------------------------------------#
 
+#This function return the list all fit and predict for Train and Test for Cross-Validation Score or Grid-Search
+def cross_val_time_series(model, df, lags, fold, scaler= 'robust'):
+        """
+    DESCRIPTION
+      Execute all train and test for each fold and return a list of Daframe with pair target and predicted
+    ARGUMENTS
+      model: This is the estimator to fit the data
+      df: DataFrame with the Time Series
+      lags: List with the lagged features
+      fold: Number of splits, minumun 2. By default we are picking the 90%/10% which is fold= 10
+      scaler: Type of normalization - By default RobustScaler
+       'norm': StandarScaler
+       'robust': RobustScaler
+       'power': PowerTransformer
+    RETURN
+      A list K-fold of DataFrames with all target and predict columns
+    """
+        
+    #Provides K-fold train/test indices to split data in train/test sets for Time Series
+    train_index_list, test_index_list = time_series_fold(df, fold= fold)
+    
+    #List of all fit and predict for Train and Test
+    forecasts = list()
+    
+    for train, test in zip(train_index_list, test_index_list):
+        #Train and Test Split for each K-fold
+        X_train, X_test, y_train, y_test = time_series_split(df, train, test, lags)
+        
+        #Scale the features
+        X_train_scaled, X_test_scaled = data_normalization(X_train, X_test, scaler)
+        
+        #Fit model with Train
+        model.fit(X_train_scaled, y_train)
+        #Predict model with Test and measure
+        y_predict = model.predict(X_test_scaled)
+        y_predict = pd.Series(y_predict, index= y_test.index)
+        y_predict = y_predict.rename(f'{y_test.name}_predicted')
+        #Create the new DataFrame with the Test y values and Test predict values
+        forecasts.append(pd.DataFrame([y_test, y_predict]).T)
+        
+    return forecasts
+
+#--------------------------------------------------------------------------------------------------#
+
+#This function performs the Cross Validation Test but for Time Series
+def cross_val_time_series_score(model, df, lags, fold, scaler= 'robust'):
+    """
+    DESCRIPTION
+      Evaluate a score by cross-validation
+    ARGUMENTS
+      model: This is the estimator to fit the data
+      df: DataFrame with the Time Series
+      column: Target column name
+      lags: List with the lagged features
+      fold: Number of splits, minumun 2. By default we are picking the 90%/10% which is fold= 10
+      metric: It could be 'rmse', 'bias', 'variance'
+      scaler: Type of normalization - By default RobustScaler
+       'norm': StandarScaler
+       'robust': RobustScaler
+       'power': PowerTransformer
+    RETURN
+      Array of scores of the estimator for each run of the cross validation
+    """
+    
+    #List of all fit and predict for Train and Test
+    forecasts = cross_val_time_series(model, df, target, lags, fold, metric, scaler= 'robust')
+    
+    #list of metric results
+    metrics = list()
+    
+    for forecast in forecasts:
+        #Add the metric in the metrics list
+        if metric == 'rmse':
+            metrics.append(metric_rmse(forecast, column))
+        elif metric == 'bias':
+            metrics.append(bias_variance(forecast, column, 'bias'))
+        elif metric == 'variance':
+            metrics.append(bias_variance(forecast, column, 'variance'))
+        
+    return np.array(metrics)
+
+#--------------------------------------------------------------------------------------------------#
+
+#--------------------------------------------------------------------------------------------------#
+
 #Return scaled X_train and X_test based on three scaler Norm, Robust and Power
 def data_normalization(X_train, X_test, scale_param):
     """
@@ -1263,31 +1391,7 @@ def data_normalization(X_train, X_test, scale_param):
 
 #--------------------------------------------------------------------------------------------------#
 
-#This is a metric for measuring the bias and variance (tradeoff)
-def bias_variance(model, X_real, y_real, tradeoff):
-    """
-    DESCRIPTION
-      This function returns the Bias or Variance for a model
-    ARGUMENTS
-      model: Regression model to apply predict
-      X_real: Real features
-      y_real: Real objective or dependant variable
-      tradeoff: What type of metric to apply in the model
-    RETURN
-      Bias or Variance
-    """
-        
-    #Predict
-    y_pred = model.predict(X_real)
-    #Bias or Variance metric
-    if tradeoff == 'variance':
-        return np.corrcoef(y_pred, y_real)[0][1]
-    elif tradeoff == 'bias':
-        return np.mean(y_pred - y_real)
-
-#--------------------------------------------------------------------------------------------------#
-
-#-----------------------------------FUNCTIONS FOR ANALYSIS PURPOSE---------------------------------#
+#------------------------------FUNCTIONS FOR ANALYSIS/METRICS PURPOSE------------------------------#
 
 #Augmented Dickey-Fuller Test
 def test_adf(df, column):
@@ -1318,6 +1422,42 @@ def test_adf(df, column):
         print(f'T-test: {t_test} {greater_smaller(t_test, t_interval[i])} Confidence Interval[{i}]: {t_interval[i]} - Result: {check(t_test, t_interval[i])}')
     
     print(f'\nP-Value: {p_value} {greater_smaller(p_value, 0.05)} 0.05 - Result: {check(p_value, 0.05)}')  
+
+#--------------------------------------------------------------------------------------------------#
+
+#This function return the RMSE
+def metric_rmse(df, column):
+    """
+    DESCRIPTION
+      This function returns the RMSE between y_real and y_predict
+    ARGUMENTS
+      df: This is the DataFrame where to calculate the RMSE
+      column: Column name of the objective
+    RETURN
+      Root mean square error
+    """
+    return np.sqrt(mean_squared_error(df[column], df[f'{column}_predicted']))
+
+#--------------------------------------------------------------------------------------------------#
+
+#This is a metric for measuring the bias and variance (tradeoff)
+def bias_variance(df, column, tradeoff):
+    """
+    DESCRIPTION
+      This function returns the Bias or Variance for a model
+    ARGUMENTS      
+      df: This is the DataFrame where to calculate the Bias or Variance
+      column: Column name of the objective
+      tradeoff: What type of metric to apply in the model
+    RETURN
+      Bias or Variance
+    """
+        
+    #Bias or Variance metric
+    if tradeoff == 'variance':
+        return np.corrcoef(df[column], df[f'{column}_predicted'])[0][1]
+    elif tradeoff == 'bias':
+        return np.mean(df[column] - df[f'{column}_predicted'])
 
 #--------------------------------------------------------------------------------------------------#
 
