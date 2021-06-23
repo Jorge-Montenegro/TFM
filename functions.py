@@ -56,6 +56,8 @@ warnings.filterwarnings('ignore')
 from tqdm.notebook import tqdm
 #Serilizing
 import pickle
+#Combination
+import itertools as it
 
 #--------------------------------------------------------------------------------------------------#
 
@@ -472,7 +474,7 @@ def draw_residuals_diagnosis(df, columns):
     
     #Second axe
     ax[1].scatter(data.index, data[residuals])
-    ax[1].hlines(0, data.index.min(), data.index.max(), color= 'r', linestyles= 'dotted', linewidths= 3, alpha=0.5)
+    ax[1].hlines(0, data.index.min(), data.index.max(), color= 'r', linestyles= 'dashed', linewidths= 3, alpha=1)
     ax[1].set_xlabel('Dates')
     ax[1].set_ylabel(residuals)
     ax[1].set_title(f'{residuals} of the model')
@@ -1272,7 +1274,7 @@ def time_series_split(df, train_index, test_index, lags):
 
 #This function return the list all fit and predict for Train and Test for Cross-Validation Score or Grid-Search
 def cross_val_time_series(model, df, lags, fold, scaler= 'robust'):
-        """
+    """
     DESCRIPTION
       Execute all train and test for each fold and return a list of Daframe with pair target and predicted
     ARGUMENTS
@@ -1314,8 +1316,37 @@ def cross_val_time_series(model, df, lags, fold, scaler= 'robust'):
 
 #--------------------------------------------------------------------------------------------------#
 
+#This function calculate the metric for each K-fold with Train and Test
+def time_series_score(forecasts, column, metric):
+    """
+    DESCRIPTION
+      Evaluate a score for each K-fold Train and Test
+    ARGUMENTS
+      forecasts: A list K-fold of DataFrames with all target and predict columns
+      column: Target column name
+      metric: It could be 'rmse', 'bias', 'variance'
+    RETURN
+      Array of scores of the estimator for each run of the cross validation
+    """
+    
+    #list of metric results
+    metrics = list()
+    
+    for forecast in forecasts:
+        #Add the metric in the metrics list
+        if metric == 'rmse':
+            metrics.append(metric_rmse(forecast, column))
+        elif metric == 'bias':
+            metrics.append(bias_variance(forecast, column, 'bias'))
+        elif metric == 'variance':
+            metrics.append(bias_variance(forecast, column, 'variance'))
+        
+    return np.array(metrics)
+
+#--------------------------------------------------------------------------------------------------#
+
 #This function performs the Cross Validation Test but for Time Series
-def cross_val_time_series_score(model, df, lags, fold, scaler= 'robust'):
+def cross_val_time_series_score(model, df, column, lags, fold, metric, scaler= 'robust'):
     """
     DESCRIPTION
       Evaluate a score by cross-validation
@@ -1335,20 +1366,11 @@ def cross_val_time_series_score(model, df, lags, fold, scaler= 'robust'):
     """
     
     #List of all fit and predict for Train and Test
-    forecasts = cross_val_time_series(model, df, target, lags, fold, metric, scaler= 'robust')
+    forecasts = cross_val_time_series(model, df, lags, fold, scaler)
+    #A list of all metrics for each K-fold
+    metrics = time_series_score(forecasts, column, metric)
     
-    #list of metric results
-    metrics = list()
-    
-    for forecast in forecasts:
-        #Add the metric in the metrics list
-        if metric == 'rmse':
-            metrics.append(metric_rmse(forecast, column))
-        elif metric == 'bias':
-            metrics.append(bias_variance(forecast, column, 'bias'))
-        elif metric == 'variance':
-            metrics.append(bias_variance(forecast, column, 'variance'))
-        
+    #Return the metric for each K-fold
     return np.array(metrics)
 
 #--------------------------------------------------------------------------------------------------#
