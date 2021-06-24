@@ -11,7 +11,7 @@ import seaborn as sns
 #Analyze distributions
 from fitter import Fitter
 #Machine Learning Libraries
-from sklearn.linear_model import LinearRegression, Ridge
+from sklearn.linear_model import LinearRegression, Ridge, ElasticNet
 from sklearn.linear_model import GammaRegressor
 from xgboost import XGBRegressor
 from lightgbm import LGBMRegressor
@@ -1366,6 +1366,7 @@ def cross_val_time_series_score(model, df, column, lags, fold, metric, scaler= '
     
     #List of all fit and predict for Train and Test
     forecasts = cross_val_time_series(model, df, lags, fold, scaler)
+    
     #A list of all metrics for each K-fold
     metrics = time_series_score(forecasts, column, metric)
     
@@ -1374,6 +1375,92 @@ def cross_val_time_series_score(model, df, column, lags, fold, metric, scaler= '
 
 #--------------------------------------------------------------------------------------------------#
 
+#Exhaustive search over specified parameter values for an estimator in a Time Series
+def grid_search_times_series(regressor, regressor_params, df, column, lags, fold, metric, scaler= 'robust'):
+    """
+    DESCRIPTION
+      Evaluate all hyperparameters for a Machine Learning model
+    ARGUMENTS
+      regressor: This is the estimator to fit the data
+      regressor_params: All the hyperparameters to try for a specific model
+      df: DataFrame with the Time Series
+      column: Target column name
+      lags: List with the lagged features
+      fold: Number of splits, minumun 2. By default we are picking the 90%/10% which is fold= 10
+      metric: It could be 'rmse', 'bias', 'variance'
+      scaler: Type of normalization - By default RobustScaler
+       'norm': StandarScaler
+       'robust': RobustScaler
+       'power': PowerTransformer
+    RETURN
+      models_list: A list with the model with all tested parameters
+      metrics_list: A list with all different metric values per model tested
+      forecasts_list: A list with the trained model with the target and predicted value in case we want to check Residuals
+    """
+    
+    #Get all parameters combination to test
+    parameters = it.product(*(regressor_params[i] for i in regressor_params))
+    #IMPORTANT - we need to repeat the combination because len + list for tqmd leaves empty the variable - consume the value
+    combination_length = it.product(*(regressor_params[i] for i in regressor_params))
+    
+    #List to return
+    forecasts_list = list()
+    metrics_list = list()
+    models_list = list()
+    
+    #Progress Bar
+    pbar = tqdm()
+    pbar.reset(len(list(combination_length)))
+    
+    for i in parameters:
+        
+        #Get the model with the hyperparameters
+        model = get_model(regressor, i)
+        
+        #List of all fit and predict for Train and Test
+        forecasts = cross_val_time_series(model, df, lags, fold, scaler)
+        
+        #Array of all metrics
+        metrics = time_series_score(forecasts, column, metric)
+        
+        #Add the model, forecasts and metrics in the list to return
+        models_list.append(model)
+        forecasts_list.append(forecasts)        
+        metrics_list.append(metrics)
+        
+        #Progress Bar
+        pbar.update()  
+        
+    #Progress Bar
+    pbar.refresh()
+    
+    return models_list, metrics_list, forecasts_list
+
+#--------------------------------------------------------------------------------------------------#
+
+#Return a specific model with their respective hyperparameters
+def get_model(model, params):
+    """
+    DESCRIPTION
+      Construct a specific regressor model with their respective hyperparameters
+    ARGUMENTS
+      model: This is the estimator to create with its respective parameters
+      params: A specific list of hyperparameters
+    RETURN
+      An instance of the model with the desired parameters
+    """
+        
+    if model == 'linear':
+        return LinearRegression()
+    elif model == 'ridge':
+        return Ridge(alpha= params[0], fit_intercept= params[1], solver= params[2])
+    elif model == 'elastic': 
+        return ElasticNet(alpha= params[0], l1_ratio= params[1], fit_intercept= params[2])
+    elif model == 'random':
+        return RandomForestRegressor(n_estimators= params[0], max_depth= params[1],
+                min_samples_split= params[2], min_samples_leaf= params[3], 
+                max_features= params[4], bootstrap= params[5])
+    
 #--------------------------------------------------------------------------------------------------#
 
 #Return scaled X_train and X_test based on three scaler Norm, Robust and Power
