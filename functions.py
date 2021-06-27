@@ -764,6 +764,79 @@ def get_lag_period(df, column, lags, period):
 
 #--------------------------------------------------------------------------------------------------#
 
+#Return a list with the Xs lagged at T+1 for forecasting purposes
+def get_time_plus_1(df, column, lags):
+    """
+    DESCRIPTION
+      This function creates a list with the lagged features for forecasting purposes. This pick the list of lagged and
+      retreive the same value. This function is needed when your lags are not consecutive
+    ARGUMENTS
+      df: This is the DataFrame from get the target to lag
+      column: This is the target variable
+      lags: list of number of lgas
+    RETURN
+      A new list with the features T+1 for forecasting purposes
+    """
+
+    #Get next T+1 in Time Series for predicting
+    lags_a = np.array(lags) * -1
+    #List of new Xs for predicting next step - T+1
+    features = list()
+    #columns name for the DataFrame
+    columns = list()
+    
+    for i in range(len(lags_a)):
+        features.append(df[column].iloc[lags_a[i]])
+            
+    return features[::-1]
+
+#--------------------------------------------------------------------------------------------------#
+
+#This function return the lagged variable for predictions sorted by Data Index
+def get_lag_features_forecast(df, column, lags, predictions):
+    """
+    DESCRIPTION
+      This function calls several times the get_time_plus_1 for each predictions. For example, predictions = 7
+      this returns a DataFrame with the next 7 days for predictions with the lagged variables needed to use in the
+      machine learning model
+    ARGUMENTS
+      df: This is the DataFrame from get the target to lag
+      column: This is the target variable
+      lags: list of number of lgas
+      predictions: Number of days for forecasting
+    RETURN
+      A new DataFrame with the lagged variables for the predictions
+    """
+    
+    #List of the lags features by prediction
+    lags_predict = list()
+    #This is the list of lags, we will convert in array to apply T+1, T+2 and so on over the same group
+    lags_a = np.array(lags)
+
+    #This is a list with the lagged target for T+1, T+2, and so on
+    #This is needed because our model predict one day T+1, another model for T+2 and so on
+    for i in range(predictions):
+        lags_predict.append(get_time_plus_1(df, column, lags_a + i))
+    
+    #Columns name for the DataFrame. Index with the extra period
+    #Important, columns should be the same name
+    columns = list()
+    index = create_date_range([data_full.index[-1] + pd.to_timedelta(1, 'D')], 'D', predictions)
+
+    for i in lags:
+        columns.append(f'{reve[0:3]}-{i}')
+
+    #Create the DataFrame with the features needed for making the forecast    
+    lag_predict_data = pd.DataFrame(lags_predict)
+    
+    #Columns and Index
+    lag_predict_data.columns = columns[::-1]
+    lag_predict_data.index = index[0]
+
+    return lag_predict_data
+
+#--------------------------------------------------------------------------------------------------#
+
 #Return a list of DataIndex
 def create_date_range(dates, range_type, range_length):
     """
