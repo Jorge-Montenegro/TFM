@@ -491,7 +491,32 @@ def draw_residuals_diagnosis(df, columns):
     fig.tight_layout()
     plt.subplots_adjust(top= 0.9)
     fig.suptitle('Residual Diagnosis', fontsize= 25)
+
+#--------------------------------------------------------------------------------------------------#    
     
+def get_confidence_intervals(forecast_train, forecast_test, column, ratio):
+    
+    confidence = {
+        '50%': 0.67,
+        '60%': 0.84,
+        '70%': 1.04,
+        '80%': 1.28,
+        '90%': 1.64,
+        '95%': 1.96,
+        '99%': 2.58
+    }
+    
+    #Let's copy the model with the target and predict columns
+    intervals = forecast_test.copy()
+    #Get the 95% confidence interval - https://otexts.com/fpp2/prediction-intervals.html
+    #From train model, calculate the std of the residuals
+    intervals['Residuals_std'] = confidence[ratio] * forecast_train['Residuals'].std()
+    #Calculate the lower and upper range
+    intervals[f'{column}_lower'] = intervals[f'{column}_predicted'] - intervals['Residuals_std']
+    intervals[f'{column}_upper'] = intervals[f'{column}_predicted'] + intervals['Residuals_std']
+
+    return intervals    
+
 #--------------------------------------------------------------------------------------------------#
 
 #------------------------------FUNCTIONS FOR DATA MANIPULATION PURPOSE-----------------------------#
@@ -837,6 +862,35 @@ def get_lag_features_forecast(df, column, lags, predictions):
 
 #--------------------------------------------------------------------------------------------------#
 
+def get_dataindex_forecast(df, predictions):
+    """
+    DESCRIPTION
+      This function create a DataFrame with Year, Month and Day for forecasting purposes because the model need those values
+    ARGUMENTS
+      predictions: Number of days for forecasting
+    RETURN
+      A new DataFrame with the lagged variables for the predictions
+    """
+    
+    #Get the last row and add <N-Predictions> more rows
+    index_range = create_date_range([data_full.index[-1] + pd.to_timedelta(1, 'D')], 'D', predictions)
+    
+    #Create new rows, index
+    row_list = list()
+    for i in index_range[0]:
+        row_list.append(pd.Series(name= i))
+    
+    date_forecast = pd.DataFrame(row_list)
+    
+    #Now, let's create Year, Month and Day
+    date_forecast['Year'] = date_forecast.index.year
+    date_forecast['Month'] = date_forecast.index.month
+    date_forecast['Day'] = date_forecast.index.day
+    
+    return date_forecast
+
+#--------------------------------------------------------------------------------------------------#
+
 #Return a list of DataIndex
 def create_date_range(dates, range_type, range_length):
     """
@@ -1074,10 +1128,6 @@ def arma_train(X_train, y_train, X_test, y_test, column):
     
     #Return train and test
     return data_train, data_test    
-
-#--------------------------------------------------------------------------------------------------#
-
-
 
 #--------------------------------------------------------------------------------------------------#
 
