@@ -12,12 +12,11 @@ import seaborn as sns
 from fitter import Fitter
 #Machine Learning Libraries
 from sklearn.linear_model import LinearRegression, Ridge, ElasticNet
-from sklearn.linear_model import GammaRegressor
-from xgboost import XGBRegressor
-from lightgbm import LGBMRegressor
+from sklearn.neighbors import KNeighborsRegressor
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.ensemble import GradientBoostingRegressor
-from sklearn.neighbors import KNeighborsRegressor
+from xgboost import XGBRegressor
+from lightgbm import LGBMRegressor
 from sklearn.model_selection import train_test_split
 from sklearn.inspection import permutation_importance
 #Model Validation
@@ -113,28 +112,30 @@ def draw_decomposition(df):
 #--------------------------------------------------------------------------------------------------#    
 
 #Quick chart for checking Autocorrelation and Partial Autocorrelation
-def draw_autocorrelation(df, mode, lags):
+def draw_autocorrelation(df, lags):
     """
     DESCRIPTION
       This draw an autocorrelation or partial autocorrelation chart based on parameter
     ARGUMENTS
       df: DataFrame where the data is stored
-      mode: Type of correlation:
-       'auto': Autocorrelation
-       'partial': Partial autocorrelation
+      lags: Number of n-1 observations
     RETURN
-      One plot
+      Two plots
     """
-
-    #Check type of autocorrelation and draw it    
-    if mode == 'auto':
-        plot_acf(df[df.columns[-1]], lags= lags)
-    elif mode == 'partial':
-        plot_pacf(df[df.columns[-1]], lags= lags)
     
-    #Horizontal lines around 0.2 correlation threshold
-    plt.hlines(0.2, 0, lags, color= 'r', linestyles= 'dotted', linewidths= 3, alpha=0.5)
-    plt.hlines(-0.2, 0, lags, color= 'r', linestyles= 'dotted', linewidths= 3, alpha=0.5)
+    #Two columns, one row
+    fig, ax = plt.subplots(1, 2)
+    #Let's convert NxM Array into N
+    ax = ax.flat
+    
+    plot_acf(df[df.columns[-1]], lags= lags, ax= ax[0])
+    plot_pacf(df[df.columns[-1]], lags= lags, ax= ax[1])
+    
+    for i in range(len(ax)):
+        #Horizontal lines around 0.2 correlation threshold
+        ax[i].hlines(0.2, 0, lags, color= 'r', linestyles= 'dotted', linewidths= 3, alpha=0.5)
+        ax[i].hlines(-0.2, 0, lags, color= 'r', linestyles= 'dotted', linewidths= 3, alpha=0.5)
+    
     plt.show()
 
 #--------------------------------------------------------------------------------------------------#
@@ -724,6 +725,45 @@ def get_lag_features(df, column, lags):
 
 #--------------------------------------------------------------------------------------------------#
 
+#Create the lagged variables for training purposes
+def get_lag_period(df, column, lags, period):
+    """
+    DESCRIPTION
+      This function creates a list of new DataFrames with the lagged variables by period, for example
+      if the period is 7 means, 7 days to predict so we need to lag the variable for day 2, day 3 and so on
+    ARGUMENTS
+      df: This is the DataFrame from get train and test data
+      column: This is the target variable
+      lags: list of number of lgas
+      period: Number of days to predict
+    RETURN
+      A new list with all DataFrames with the lagged variables for training
+    """
+
+    #Convert lags into array for easy manipulation
+    lags_a = np.array(lags)
+    #List with all data_lagged
+    data_model_list = list()
+
+    #Create Seasonal Features - I am transforming as if they were non-numeric variables
+    data_seasonal = pd.get_dummies(df[['Year', 'Month', 'Day']].astype('str'))
+    #Create Exogenus Features
+    data_exogenous = get_exogenous_features(df)[['Black_Friday', 'Easter', 'Covid']]
+    
+    for i in range(period):
+        
+        #Create the model for Machine Learning models lagged by period
+        #If we want to predict Day+2, we need to lag the already lagged variables +1
+        data_lag = get_lag_features(df, column, lags_a + i)
+        data_model = pd.concat([data_seasonal, data_exogenous, data_lag, df[column]], axis= 1)
+        data_model.dropna(inplace= True)
+        #add the model to a list
+        data_model_list.append(data_model)
+
+    return data_model_list
+
+#--------------------------------------------------------------------------------------------------#
+
 #Return a list of DataIndex
 def create_date_range(dates, range_type, range_length):
     """
@@ -1183,6 +1223,66 @@ def data_split(X, y):
 
 #--------------------------------------------------------------------------------------------------#
 
+#Return scaled X_train and X_test based on three scaler Norm, Robust and Power
+def data_normalization(X_train, X_test, scale_param):
+    """
+    DESCRIPTION
+      This function X_train and X_test set normalized based on scale method
+    ARGUMENTS
+      X_train: Train set to scale
+      X_test: Test set to scale
+      scaler: Type of normalization:
+       'norm': StandarScaler
+       'robust': RobustScaler
+       'power': PowerTransformer
+    RETURN
+      X_train scaled
+      X_test scale
+    """
+    
+    #Dictionaries of scaling methods
+    methods = {'norm': StandardScaler(),
+               'robust': RobustScaler(),
+               'power': PowerTransformer()}
+    #Data Normalization
+    scaler = methods[scale_param]
+    
+    #Train the scaler with the X_train data
+    scaler.fit(X_train)
+    
+    #Scale both sets
+    X_train_scaled = scaler.transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
+    
+    
+    return X_train_scaled, X_test_scaled
+
+#--------------------------------------------------------------------------------------------------#
+
+#Return a DataFrame with the Real, Predict Target and Residuals
+def predict_model(model, X, y):
+    """
+    DESCRIPTION
+      This function applies the features to the model and get the prediction
+    ARGUMENTS
+      X: Features
+      y: Target
+    RETURN
+      A DataFrame with y_real, y_predicted and Residuals
+    """
+    #Predict this model with Train Data
+    y_predict = model.predict(X)
+    y_predict = pd.Series(y_predict, index= y.index)
+    y_predict = y_predict.rename(f'{y.name}_predicted')
+    #Residuals
+    forecast = pd.DataFrame([y, y_predict]).T
+    forecast['Residuals'] = forecast[y.name] - forecast[f'{y.name}_predicted']
+    
+    #Create the new DataFrame with the Train y values and Train predict values
+    return forecast
+
+#--------------------------------------------------------------------------------------------------#
+
 #Return the Xs and ys for the first fold of one Time Series
 def time_series_train_test_split(df, lags):
     """
@@ -1448,7 +1548,7 @@ def get_model(model, params):
       params: A specific list of hyperparameters
     RETURN
       An instance of the model with the desired parameters
-    """
+    """       
         
     if model == 'linear':
         return LinearRegression()
@@ -1456,47 +1556,44 @@ def get_model(model, params):
         return Ridge(alpha= params[0], fit_intercept= params[1], solver= params[2])
     elif model == 'elastic': 
         return ElasticNet(alpha= params[0], l1_ratio= params[1], fit_intercept= params[2])
+    elif model == 'kneighbors':
+        return KNeighborsRegressor(n_neighbors= params[0], weights= params[1], algorithm= params[2])
     elif model == 'random':
         return RandomForestRegressor(n_estimators= params[0], max_depth= params[1],
                 min_samples_split= params[2], min_samples_leaf= params[3], 
                 max_features= params[4], bootstrap= params[5])
-    
+    elif model == 'gradient':
+        return GradientBoostingRegressor(loss= params[0], n_estimators= params[1],
+                min_samples_split= params[2], min_samples_leaf= params[3],
+                max_depth= params[4], max_features= params[5])
+    elif model == 'xgb':
+        return XGBRegressor(n_estimators= params[0], max_depth= params[1], booster= params[2])
+    elif model == 'lgbm':
+        return LGBMRegressor(num_leaves= params[0], n_estimators= params[1])
+
 #--------------------------------------------------------------------------------------------------#
 
-#Return scaled X_train and X_test based on three scaler Norm, Robust and Power
-def data_normalization(X_train, X_test, scale_param):
+#Get the best score and hyperparameters for a specific GridSearch
+def best_model_metric(models, metrics):
     """
     DESCRIPTION
-      This function X_train and X_test set normalized based on scale method
+      Return the best metric(RMSE normally) and best hyperparameters
     ARGUMENTS
-      X_train: Train set to scale
-      X_test: Test set to scale
-      scaler: Type of normalization:
-       'norm': StandarScaler
-       'robust': RobustScaler
-       'power': PowerTransformer
-    RETURN
-      X_train scaled
-      X_test scale
-    """
+      models: List of all tested models
+      metrics: List of all metrics for all tebest_metric    RETURN
+      best_metric: Best metric after the GridSearch
+      best_hyperparameters: Best parameters combination with the lowest metric
+    """       
     
-    #Dictionaries of scaling methods
-    methods = {'norm': StandardScaler(),
-               'robust': RobustScaler(),
-               'power': PowerTransformer()}
-    #Data Normalization
-    scaler = methods[scale_param]
+    #Best score index
+    best_score = pd.DataFrame(metrics).T.mean().sort_values().index[0]
+    #Best metric
+    best_metric = pd.DataFrame(metrics).T.mean().sort_values()[best_score]
+    #Best model
+    best_hyperparameters = models[best_score]
     
-    #Train the scaler with the X_train data
-    scaler.fit(X_train)
+    return best_metric, best_hyperparameters    
     
-    #Scale both sets
-    X_train_scaled = scaler.transform(X_train)
-    X_test_scaled = scaler.transform(X_test)
-    
-    
-    return X_train_scaled, X_test_scaled
-
 #--------------------------------------------------------------------------------------------------#
 
 #------------------------------FUNCTIONS FOR ANALYSIS/METRICS PURPOSE------------------------------#
