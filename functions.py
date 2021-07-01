@@ -493,8 +493,20 @@ def draw_residuals_diagnosis(df, columns):
     fig.suptitle('Residual Diagnosis', fontsize= 25)
 
 #--------------------------------------------------------------------------------------------------#    
-    
+
+#Get the confidence intervals for drawing
 def get_confidence_intervals(forecast_train, forecast_test, column, ratio):
+    """
+    DESCRIPTION
+      This function return the lower and upper confidence intervals considering a Normal Distribution
+    ARGUMENTS
+      forecast_train: Ys from the target Dataset
+      forecast_test: Ys from the test Dataset
+      column: This is the target name
+      ratio: Confidence interval ratio
+    RETURN
+      Return a new DataFrame with the new two columns lower and upper
+    """
     
     confidence = {
         '50%': 0.67,
@@ -517,6 +529,27 @@ def get_confidence_intervals(forecast_train, forecast_test, column, ratio):
 
     return intervals    
 
+#--------------------------------------------------------------------------------------------------#
+
+#This draw the a horizontal bars for checking the best model
+def draw_barh(df, column):
+    """
+    DESCRIPTION
+      This function draw a horizontal bar sort by lowest to highest kpi. Normally, RMSE or R2
+    ARGUMENTS
+      df: DataFrame where data is located
+      column: This is the target name
+    RETURN
+      Draw a horizontal bar sort by low to high
+    """
+    
+    ax = df[column].sort_values(ascending = False).plot(kind='barh')
+    for i, name in enumerate(list(df[column].sort_values(ascending = False).index)):
+        col_value = df.loc[name, column]
+        ax.annotate(f'{col_value:.2f}', (col_value, i), xytext=(10, -5), textcoords='offset points')
+    
+    ax.set_title(f'Model Comparison by {column}')
+    
 #--------------------------------------------------------------------------------------------------#
 
 #------------------------------FUNCTIONS FOR DATA MANIPULATION PURPOSE-----------------------------#
@@ -846,10 +879,10 @@ def get_lag_features_forecast(df, column, lags, predictions):
     #Columns name for the DataFrame. Index with the extra period
     #Important, columns should be the same name
     columns = list()
-    index = create_date_range([data_full.index[-1] + pd.to_timedelta(1, 'D')], 'D', predictions)
+    index = create_date_range([df.index[-1] + pd.to_timedelta(1, 'D')], 'D', predictions)
 
     for i in lags:
-        columns.append(f'{reve[0:3]}-{i}')
+        columns.append(f'{column[0:3]}-{i}')
 
     #Create the DataFrame with the features needed for making the forecast    
     lag_predict_data = pd.DataFrame(lags_predict)
@@ -873,7 +906,7 @@ def get_dataindex_forecast(df, predictions):
     """
     
     #Get the last row and add <N-Predictions> more rows
-    index_range = create_date_range([data_full.index[-1] + pd.to_timedelta(1, 'D')], 'D', predictions)
+    index_range = create_date_range([df.index[-1] + pd.to_timedelta(1, 'D')], 'D', predictions)
     
     #Create new rows, index
     row_list = list()
