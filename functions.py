@@ -329,7 +329,7 @@ def get_bins(df, column):
 
 #--------------------------------------------------------------------------------------------------#
 
-#This function is not used for it was needed in the past. It is a backtracking function
+#This function is not needed-----------------------------------------------------------------------#
 def max_closest_number(n, x= 1):
     if int(n // x) <= 10:
         return (int(n // x) + 1) * x
@@ -494,11 +494,34 @@ def draw_residuals_diagnosis(df, columns):
 
 #--------------------------------------------------------------------------------------------------#    
 
+#Return the confidence ratio
+def get_confidence(ratio):
+    """
+    DESCRIPTION
+      This function returns the ratio for caulculating the upper and lower confidence intervals
+    ARGUMENTS
+      ratio: from 50% to 99%
+    RETURN
+      Return the confidence ratio
+    """
+    
+    confidence = {
+        '50%': 0.67,
+        '60%': 0.84,
+        '70%': 1.04,
+        '80%': 1.28,
+        '90%': 1.64,
+        '95%': 1.96,
+        '99%': 2.58
+    }
+    
+    return confidence[ratio]
+
 #Get the confidence intervals for drawing
 def get_confidence_intervals(forecast_train, forecast_test, column, ratio):
     """
     DESCRIPTION
-      This function return the lower and upper confidence intervals considering a Normal Distribution
+      This function returns the lower and upper confidence intervals considering a Normal Distribution
     ARGUMENTS
       forecast_train: Ys from the target Dataset
       forecast_test: Ys from the test Dataset
@@ -522,7 +545,7 @@ def get_confidence_intervals(forecast_train, forecast_test, column, ratio):
     intervals = forecast_test.copy()
     #Get the 95% confidence interval - https://otexts.com/fpp2/prediction-intervals.html
     #From train model, calculate the std of the residuals
-    intervals['Residuals_std'] = confidence[ratio] * forecast_train['Residuals'].std()
+    intervals['Residuals_std'] = get_confidence(ratio) * forecast_train['Residuals'].std()
     #Calculate the lower and upper range
     intervals[f'{column}_lower'] = intervals[f'{column}_predicted'] - intervals['Residuals_std']
     intervals[f'{column}_upper'] = intervals[f'{column}_predicted'] + intervals['Residuals_std']
@@ -621,6 +644,7 @@ def split_dates_by_columns(df, column):
 
 #--------------------------------------------------------------------------------------------------#
 
+#This function is not needed-----------------------------------------------------------------------#
 #Convert Date into ISO Year, ISO Week and Day
 def split_dates_by_iso_columns(df, column):
     """
@@ -648,6 +672,7 @@ def split_dates_by_iso_columns(df, column):
 
 #--------------------------------------------------------------------------------------------------#
 
+#This function is not needed-----------------------------------------------------------------------#
 #Group some traffic sources into Direct and Display based on some specific rules
 def group_programs(df):
     """
@@ -685,7 +710,7 @@ def group_programs(df):
 
 #--------------------------------------------------------------------------------------------------#
 
-#This function is not needed
+#This function is not needed-----------------------------------------------------------------------#
 #Add two new qualitative columns, Black Friday=1 and Cyber Monday=1
 def get_black_friday_cyber_monday(df):
     """
@@ -783,6 +808,28 @@ def get_lag_features(df, column, lags):
 
 #--------------------------------------------------------------------------------------------------#
 
+#Give a Dataframe with the Year, Month, Day as orinal variables and Exogenous
+def prepare_seasonal_data(df):
+    """
+    DESCRIPTION
+      This function creates a new DataFrame with Year, Monday and Day plus Exogenous features
+    ARGUMENTS
+      df: This is the DataFrame from the features to transform
+    RETURN
+      A new DataFrame with the Dummies and Exogenous features
+    """
+
+    #Create Seasonal Features - I am transforming as if they were non-numeric variables
+    data_seasonal = pd.get_dummies(df[['Year', 'Month', 'Day']].astype('str'))
+    #Create Exogenus Features
+    data_exogenous = get_exogenous_features(df)[['Black_Friday', 'Easter', 'Covid']]
+    #Create the model to Train and Test with the different Machine Learning models
+    data_se = pd.concat([data_seasonal, data_exogenous], axis= 1)
+    
+    return data_se
+
+#--------------------------------------------------------------------------------------------------#
+
 #Create the lagged variables for training purposes
 def get_lag_period(df, column, lags, period):
     """
@@ -803,17 +850,15 @@ def get_lag_period(df, column, lags, period):
     #List with all data_lagged
     data_model_list = list()
 
-    #Create Seasonal Features - I am transforming as if they were non-numeric variables
-    data_seasonal = pd.get_dummies(df[['Year', 'Month', 'Day']].astype('str'))
-    #Create Exogenus Features
-    data_exogenous = get_exogenous_features(df)[['Black_Friday', 'Easter', 'Covid']]
+    #Create Seasonal and Exgenous Features
+    data_se = prepare_seasonal_data(df)
     
     for i in range(period):
         
         #Create the model for Machine Learning models lagged by period
         #If we want to predict Day+2, we need to lag the already lagged variables +1
         data_lag = get_lag_features(df, column, lags_a + i)
-        data_model = pd.concat([data_seasonal, data_exogenous, data_lag, df[column]], axis= 1)
+        data_model = pd.concat([data_se, data_lag, df[column]], axis= 1)
         data_model.dropna(inplace= True)
         #add the model to a list
         data_model_list.append(data_model)
@@ -941,6 +986,61 @@ def create_date_range(dates, range_type, range_length):
 
 #--------------------------------------------------------------------------------------------------#
 
+#Return the Dataframe for training with all features, seasonal, exogenous, lagged and target
+def prepare_data(data, column, lags):
+    """
+    DESCRIPTION
+      This function returns a specific data model for training, it has all needed features and target
+    ARGUMENTS
+      df: This is the original DataFrame where pick the data
+      column: This is the target variable
+      lags: list of number of lgas
+    RETURN
+      A new DataFrame ready for training
+    """  
+    #All lagged features
+    data_lag = get_lag_features(data, column, lags)
+    
+    #All new season features needed also for exogenous calculation
+    data_se = prepare_seasonal_data(data)
+    
+    data_model = pd.concat([data_se, data_lag, data[column]], axis= 1)
+    data_model.dropna(inplace= True)
+    
+    return data_model
+
+#--------------------------------------------------------------------------------------------------#
+
+#Similar to prepare_data but for forecasting purposes
+def prepare_data_forecast(data, column, lags, period):
+    """
+    DESCRIPTION
+      This function returns a specific data model for forecasting. It has all features but target is unknow
+    ARGUMENTS
+      df: This is the original DataFrame where pick the data
+      column: This is the target variable
+      lags: list of number of lgas
+      period: Number of T+period to forecast
+    RETURN
+      A new DataFrame ready for forecasting
+    """  
+    
+    #All lagged features for forecasting - Period ?
+    data_lag_forecast = get_lag_features_forecast(data, 'Revenue', lags, period)
+    
+    #All new season features needed also for exogenous calculation
+    seasonal_forecast = get_dataindex_forecast(data, period)
+    #All new season features needed also for exogenous calculation
+    data_se_forecast = prepare_seasonal_data(seasonal_forecast)
+    
+    #Data Set Ready for Forecasting
+    data_forecast = pd.concat([data_se_forecast, data_lag_forecast], axis= 1)
+    
+    return data_forecast
+
+#--------------------------------------------------------------------------------------------------#
+
+#This function is not needed-----------------------------------------------------------------------#
 #This could be the main function to return the final DataFrame with all manipulations
 def dataframe_preparation(df):
     """
@@ -1387,13 +1487,41 @@ def data_normalization(X_train, X_test, scale_param):
     ARGUMENTS
       X_train: Train set to scale
       X_test: Test set to scale
-      scaler: Type of normalization:
+      scale_param: Type of normalization:
        'norm': StandarScaler
        'robust': RobustScaler
        'power': PowerTransformer
     RETURN
       X_train scaled
       X_test scale
+    """
+
+    #Get the scaler
+    scaler = get_scaler(scale_param)
+    
+    #Train the scaler with the X_train data
+    scaler.fit(X_train)
+    
+    #Scale both sets
+    X_train_scaled = scaler.transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
+    
+    return X_train_scaled, X_test_scaled
+
+#--------------------------------------------------------------------------------------------------#
+
+#Return a scaler
+def get_scaler(scale_param):
+    """
+    DESCRIPTION
+      This function returns one of the available scaler among Standard, Robust or Power
+    ARGUMENTS
+      scale_param: Type of normalization:
+       'norm': StandarScaler
+       'robust': RobustScaler
+       'power': PowerTransformer
+    RETURN
+      A scaler, Standard, Robust or Power
     """
     
     #Dictionaries of scaling methods
@@ -1403,15 +1531,33 @@ def data_normalization(X_train, X_test, scale_param):
     #Data Normalization
     scaler = methods[scale_param]
     
-    #Train the scaler with the X_train data
-    scaler.fit(X_train)
+    return scaler
+
+#Return a model to train with the best hyperparameters discovered previously
+def get_ml_model(model):
+    """
+    DESCRIPTION
+      This function returns one of the available machine learning Gradient Boost or XGB
+    ARGUMENTS
+      model: Type of regressor:
+       'gradient': Gradient Boost
+       'xgb': XGB       
+    RETURN
+      A machine learning
+    """
     
-    #Scale both sets
-    X_train_scaled = scaler.transform(X_train)
-    X_test_scaled = scaler.transform(X_test)
+    #Dictionaries of Machine Learning methods
+    models_dict = {'gradient': GradientBoostingRegressor(max_features='auto'),
+               'xgb': XGBRegressor(base_score=0.5, booster='gbtree', colsample_bylevel=1,
+              colsample_bynode=1, colsample_bytree=1, gamma=0, gpu_id=-1,
+              importance_type='gain', interaction_constraints='',
+              learning_rate=0.300000012, max_delta_step=0, max_depth=13,
+              min_child_weight=1, missing=np.nan, monotone_constraints='()',
+              n_estimators=1000, n_jobs=4, num_parallel_tree=1, random_state=0,
+              reg_alpha=0, reg_lambda=1, scale_pos_weight=1, subsample=1,
+              tree_method='exact', validate_parameters=1, verbosity=None)}
     
-    
-    return X_train_scaled, X_test_scaled
+    return models_dict[model]
 
 #--------------------------------------------------------------------------------------------------#
 
@@ -1750,6 +1896,115 @@ def best_model_metric(models, metrics):
     
     return best_metric, best_hyperparameters    
     
+#--------------------------------------------------------------------------------------------------#
+
+#Predict the future base on previous data
+def forecast_predict(data, column, lags, period, ml_model, scale_param= 'robust', confidence= '95%'):
+    """
+    DESCRIPTION
+      This returns the a forecast and the intervals of confidence based on a period
+    ARGUMENTS
+      regressor: This is the estimator to fit the data
+      regressor_params: All the hyperparameters to try for a specific model
+      data: DataFrame with the original Time Series
+      data_forecast:
+      column: Target column name
+      lags: List with the lagged features
+      fold: Number of splits, minumun 2. By default we are picking the 90%/10% which is fold= 10
+      metric: It could be 'rmse', 'bias', 'variance'
+      scaler: Type of normalization - By default RobustScaler
+       'norm': StandarScaler
+       'robust': RobustScaler
+       'power': PowerTransformer
+    RETURN
+      models_list: A list with the model with all tested parameters
+      metrics_list: A list with all different metric values per model tested
+      forecasts_list: A list with the trained model with the target and predicted value in case we want to check Residuals
+    """
+    
+    #Convert list lags into arrays lags for manipulation
+    lags_a = np.array(lags)
+    #Prepare the scaler
+    scaler = get_scaler(scale_param)
+    #Forecast to return
+    forecast = pd.DataFrame()
+    #Confidence intervals
+    intervals = pd.DataFrame()
+    #Get the machine learning to train and use for forecasting
+    model = get_ml_model(ml_model)
+    #Index for the forecast - period would be same as lags
+    index_range = create_date_range([data.index[-1] + pd.to_timedelta(1, 'D')], 'D', period)
+    
+    #Need to prepare the data for forecasting. We need to merge the set for prediction because there are
+    #Some dummies which are not available. Mainly the seasonal and exogenous features
+    data_forecast = prepare_data_forecast(data, column, lags, period)
+    seasonal_forecast = prepare_seasonal_data(data)
+    #Need to concatenate by rows and then by columns
+    temp_forecast = pd.concat([seasonal_forecast, data_forecast])
+    data_forecast = pd.concat([temp_forecast, data[column]], axis= 1).fillna(0, downcast= 'infer')
+    
+    #Therefore, we will have the forecast with all features needed otherwise, there will be missing some
+    #due to we use categorical ones for dates
+    
+    #For each lag, we need to create a new model with the new lagged features
+    for i in range(period):
+        #Let's start from i=0 means lag T-lags list -1, -2, and so on
+        #from i=1 means lag T-lags array -1-1=T-2, -2-1=T-3 and so on 
+        lag = lags_a + i
+        
+        #--Begin Training the model
+        #Prepare the data for training
+        data_model = prepare_data(data, column, lag)
+        
+        #Train and Test Split. However, we are not going to use Test
+        X_train, X_test, y_train, y_test = time_series_train_test_split(data_model, lag)
+        
+        #Train the scaler with the X_train data
+        scaler.fit(X_train)
+        #Scale just Train
+        X_train_scaled = scaler.transform(X_train)
+        
+        #Apply the fit to regressor
+        model.fit(X_train_scaled, y_train)
+        
+        #Revenue, Predicted and Residuals. This is for creating the Confidence Intervals
+        predict_train = predict_model(model, X_train_scaled, y_train)
+        #Calculate the Standard Deviation
+        std = predict_train['Residuals'].std()
+        ##--End Training the model
+        
+        #Start with the prediction
+        #Pick the <i> position value to forecast and so on and apply the scaler
+        X_forecast = data_forecast.loc[index_range[0][i]][:-1]
+        X_forecast = np.array(X_forecast).reshape(1, -1)
+        X_forecast_scaled = scaler.transform(X_forecast)
+        #Predict
+        y_forecast = model.predict(X_forecast_scaled)
+        
+        #Prepare the Series with the Index=Date and Column=Revenue_forecast
+        #y_forecast[0] because it is an array
+        y_forecast_serie = pd.Series(y_forecast[0], index= [index_range[0][i]])
+        y_forecast_serie = y_forecast_serie.rename(f'{column}_forecast')
+        
+        #Now prepare the Confidence Intervals
+        lower = y_forecast - get_confidence(confidence) * std
+        upper = y_forecast + get_confidence(confidence) * std
+        
+        y_lower_serie = pd.Series(lower, index= [index_range[0][i]])
+        y_lower_serie = y_lower_serie.rename(f'{column}_lower')
+        
+        y_upper_serie = pd.Series(upper, index= [index_range[0][i]])
+        y_upper_serie = y_upper_serie.rename(f'{column}_upper')
+        
+        #Add the Series to the final Forecast DataFrame
+        forecast = pd.concat([forecast, y_forecast_serie.to_frame()])
+        #Add the Confidence Intervals
+        intervals = pd.concat([intervals, pd.concat([y_lower_serie.to_frame(), y_upper_serie.to_frame()], axis= 1)])
+    
+    
+    #Return the final DataFrame
+    return pd.concat([forecast, intervals], axis= 1)
+
 #--------------------------------------------------------------------------------------------------#
 
 #------------------------------FUNCTIONS FOR ANALYSIS/METRICS PURPOSE------------------------------#
