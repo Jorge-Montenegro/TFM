@@ -21,16 +21,14 @@ from sklearn.model_selection import train_test_split
 from sklearn.inspection import permutation_importance
 #Model Prophet
 from prophet import Prophet
+#Model Keras
+from keras import models, layers, metrics, losses, optimizers
 #Model Validation
 from sklearn.model_selection import cross_val_score
 from sklearn.model_selection import KFold
 from sklearn.model_selection import GridSearchCV
 #Normalization
-from sklearn.preprocessing import StandardScaler
-from sklearn.preprocessing import PowerTransformer
-from sklearn.preprocessing import RobustScaler
-from sklearn.preprocessing import Normalizer
-from sklearn.compose import ColumnTransformer
+from sklearn.preprocessing import StandardScaler, PowerTransformer, RobustScaler, MinMaxScaler
 #Scoring
 from sklearn import metrics
 from sklearn.metrics import make_scorer
@@ -1493,6 +1491,7 @@ def data_normalization(X_train, X_test, scale_param):
        'norm': StandarScaler
        'robust': RobustScaler
        'power': PowerTransformer
+       'minmax: MinMaxScaler
     RETURN
       X_train scaled
       X_test scale
@@ -1529,7 +1528,8 @@ def get_scaler(scale_param):
     #Dictionaries of scaling methods
     methods = {'norm': StandardScaler(),
                'robust': RobustScaler(),
-               'power': PowerTransformer()}
+               'power': PowerTransformer(),
+               'minmax': MinMaxScaler()}
     #Data Normalization
     scaler = methods[scale_param]
     
@@ -1906,22 +1906,20 @@ def forecast_predict(data, column, lags, period, ml_model, scale_param= 'robust'
     DESCRIPTION
       This returns the a forecast and the intervals of confidence based on a period
     ARGUMENTS
-      regressor: This is the estimator to fit the data
-      regressor_params: All the hyperparameters to try for a specific model
       data: DataFrame with the original Time Series
-      data_forecast:
       column: Target column name
       lags: List with the lagged features
-      fold: Number of splits, minumun 2. By default we are picking the 90%/10% which is fold= 10
-      metric: It could be 'rmse', 'bias', 'variance'
+      period: Number of days to predict
+      ml_model: Machine Learning to select, onlye two options:
+      'xgb': XGB
+      'gradient': Gradient Boost
       scaler: Type of normalization - By default RobustScaler
        'norm': StandarScaler
        'robust': RobustScaler
        'power': PowerTransformer
+      confidence: For confidence intervals creation
     RETURN
-      models_list: A list with the model with all tested parameters
-      metrics_list: A list with all different metric values per model tested
-      forecasts_list: A list with the trained model with the target and predicted value in case we want to check Residuals
+      A DataFrame with the predicted values and confidence intervals
     """
     
     #Convert list lags into arrays lags for manipulation
@@ -2005,6 +2003,147 @@ def forecast_predict(data, column, lags, period, ml_model, scale_param= 'robust'
     
     
     #Return the final DataFrame
+    return pd.concat([forecast, intervals], axis= 1)
+
+#--------------------------------------------------------------------------------------------------#
+
+#--------------------------------FUNCTIONS FOR DEEP LEARNING PURPOSE-------------------------------#
+
+#Return a list of RNNs
+def get_rnn_list(period):
+    """
+    DESCRIPTION
+      This functions create a list of RNN based on the number of periods to predict in a forecasting
+    ARGUMENTS
+      period: Number of days to predict
+    RETURN
+      A list of RNN
+    """
+  
+    rnn_list = list()
+    
+    for i in range(period):
+        #RNN
+        rnn = models.Sequential()
+        #Three layers - Let's pick shape= 61 x 2, then 61 x1 and 30 and 7 nodes
+        rnn.add(layers.Dense(122, input_shape=(X_train_scaled.shape[1],), activation='relu')) 
+        rnn.add(layers.Dense(61, activation='relu'))
+        rnn.add(layers.Dense(30, activation='relu'))
+        rnn.add(layers.Dense(7, activation='relu'))
+        rnn.add(layers.Dense(1))
+        #Compile the RNN
+        rnn.compile(optimizer= optimizers.RMSprop(), loss= losses.mean_squared_error, metrics= [metrics.mean_squared_error]) 
+        #Add the RNN to the list
+        rnn_list.append(rnn)
+    
+    return rnn_list
+
+#--------------------------------------------------------------------------------------------------#
+
+#Predict the future base on previous data for RNN
+def forecast_predict_rnn(data, column, lags, period, model, epochs, scale_param= 'robust', confidence= '95%'):
+    """
+    DESCRIPTION
+      This returns the a forecast and the intervals of confidence based on a period
+    ARGUMENTS
+      data: DataFrame with the original Time Series
+      column: Target column name
+      lags: List with the lagged features
+      period: Number of days to predict
+      model: A list of RNN with the same size as period
+      epochs: Number of iterations
+      'xgb': XGB
+      'gradient': Gradient Boost
+      scaler: Type of normalization - By default RobustScaler
+       'norm': StandarScaler
+       'robust': RobustScaler
+       'power': PowerTransformer
+      confidence: For confidence intervals creation
+    RETURN
+      A DataFrame with the predicted values and confidence intervals
+    """
+    
+    #Convert list lags into arrays lags for manipulation
+    lags_a = np.array(lags)
+    #Prepare the scaler
+    scaler = get_scaler('robust')
+    #Forecast to return
+    forecast = pd.DataFrame()
+    #Confidence intervals
+    intervals = pd.DataFrame()
+    #Index for the forecast - period would be same as lags
+    index_range = create_date_range([data.index[-1] + pd.to_timedelta(1, 'D')], 'D', period)
+
+
+    #Need to prepare the data for forecasting. We need to merge the set for prediction because there are
+    #Some dummies which are not available. Mainly the seasonal and exogenous features
+    data_forecast = prepare_data_forecast(data, column, lags, period)
+    seasonal_forecast = prepare_seasonal_data(data)
+    #Need to concatenate by rows and then by columns
+    temp_forecast = pd.concat([seasonal_forecast, data_forecast])
+    data_forecast = pd.concat([temp_forecast, data[column]], axis= 1).fillna(0, downcast= 'infer')
+
+    #Therefore, we will have the forecast with all features needed otherwise, there will be missing some
+    #due to we use categorical ones for dates
+
+    #For each lag, we need to create a new model with the new lagged features
+    for i in range(period):
+        #Let's start from i=0 means lag T-lags list -1, -2, and so on
+        #from i=1 means lag T-lags array -1-1=T-2, -2-1=T-3 and so on 
+        lag = lags_a + i
+
+        #--Begin Training the model
+        #Prepare the data for training
+        data_model = prepare_data(data, column, lag)
+
+        #Train and Test Split. However, we are not going to use Test
+        X_train, X_test, y_train, y_test = time_series_train_test_split(data_model, lag)
+
+        #Train the scaler with the X_train data
+        scaler.fit(X_train)
+        #Scale just Train
+        X_train_scaled = scaler.transform(X_train)
+
+        #Apply the fit to the specific neuronal network
+        model[i].fit(X_train_scaled, y_train, epochs= epochs)
+
+        y_predict_train = model[i].predict(X_train_scaled)
+        y_predict_train = pd.DataFrame(y_predict_train, index= y_train.index, columns= [f'{y_train.name}_predicted'])
+        predict_train = pd.concat([y_train.to_frame(), y_predict_train], axis= 1)
+        predict_train['Residuals'] = predict_train[column] - predict_train[f'{column}_predicted']
+
+        #Calculate the Standard Deviation
+        std = predict_train['Residuals'].std()
+
+        #Start with the prediction
+        #Pick the <i> position value to forecast and so on and apply the scaler
+        X_forecast = data_forecast.loc[index_range[0][i]][:-1]
+        X_forecast = np.array(X_forecast).reshape(1, -1)
+        X_forecast_scaled = scaler.transform(X_forecast)
+        
+        #Predict
+        y_forecast = model[i].predict(X_forecast_scaled)
+        
+        #Prepare the Series with the Index=Date and Column=Revenue_forecast
+        #y_forecast[0] because it is an array
+        y_forecast_serie = pd.Series(y_forecast[0], index= [index_range[0][i]])
+        y_forecast_serie = y_forecast_serie.rename(f'{column}_forecast')
+
+        #Now prepare the Confidence Intervals
+        lower = y_forecast - get_confidence(confidence) * std
+        upper = y_forecast + get_confidence(confidence) * std
+
+        y_lower_serie = pd.Series(lower[0], index= [index_range[0][i]])
+        y_lower_serie = y_lower_serie.rename(f'{column}_lower')
+
+        y_upper_serie = pd.Series(upper[0], index= [index_range[0][i]])
+        y_upper_serie = y_upper_serie.rename(f'{column}_upper')
+
+        #Add the Series to the final Forecast DataFrame
+        forecast = pd.concat([forecast, y_forecast_serie.to_frame()])
+        #Add the Confidence Intervals
+        intervals = pd.concat([intervals, pd.concat([y_lower_serie.to_frame(), y_upper_serie.to_frame()], axis= 1)])
+
     return pd.concat([forecast, intervals], axis= 1)
 
 #--------------------------------------------------------------------------------------------------#
