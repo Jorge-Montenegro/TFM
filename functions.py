@@ -754,7 +754,7 @@ def get_exogenous_features(df):
     """
     
     #Constants of the seasonal variables
-    bf_date_list = ['2015-11-27', '2016-11-25', '2017-11-24', '2018-11-23', '2019-11-29', '2020-11-27']
+    bf_date_list = ['2015-11-27', '2016-11-25', '2017-11-24', '2018-11-23', '2019-11-29', '2020-11-27', '2021-11-26']
     easter_date_list = ['2015-03-30', '2016-03-21', '2017-04-10', '2018-03-26', '2019-04-15', '2020-04-06', '2021-03-29']
     covid_date_range = ['2020-03-14', '2020-06-21']
     
@@ -1549,7 +1549,8 @@ def get_ml_model(model):
     """
     
     #Dictionaries of Machine Learning methods
-    models_dict = {'gradient': GradientBoostingRegressor(max_features='auto'),
+    models_dict = {'ridge': Ridge(alpha=0.001, fit_intercept=False, solver='sag'),
+                'gradient': GradientBoostingRegressor(max_features='auto'),
                'xgb': XGBRegressor(base_score=0.5, booster='gbtree', colsample_bylevel=1,
               colsample_bynode=1, colsample_bytree=1, gamma=0, gpu_id=-1,
               importance_type='gain', interaction_constraints='',
@@ -1913,6 +1914,7 @@ def forecast_predict(data, column, lags, period, ml_model, scale_param= 'robust'
       ml_model: Machine Learning to select, onlye two options:
       'xgb': XGB
       'gradient': Gradient Boost
+      'ridge': Ridge
       scaler: Type of normalization - By default RobustScaler
        'norm': StandarScaler
        'robust': RobustScaler
@@ -2026,7 +2028,7 @@ def get_rnn_list(period):
         #RNN
         rnn = models.Sequential()
         #Three layers - Let's pick shape= 61 x 2, then 61 x1 and 30 and 7 nodes
-        rnn.add(layers.Dense(122, input_shape=(X_train_scaled.shape[1],), activation='relu')) 
+        rnn.add(layers.Dense(122, input_shape=(61,), activation='relu')) 
         rnn.add(layers.Dense(61, activation='relu'))
         rnn.add(layers.Dense(30, activation='relu'))
         rnn.add(layers.Dense(7, activation='relu'))
