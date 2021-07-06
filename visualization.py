@@ -13,10 +13,11 @@ from dateutil.relativedelta import relativedelta
 from functions import *
 
 #Constants
-model_type_list = ['Select', 'Classical', 'Machine Learning', 'Deep Learning']
+model_type_list = ['Select', 'Classical', 'Machine Learning']
+#model_type_list = ['Select', 'Classical', 'Machine Learning', 'Deep Learning']
 classical_model_list = ['Select', 'SARIMAX', 'Holt-Winters']
 ml_model_list = ['Select', 'Ridge', 'Gradient Boost', 'XGB']
-rnn_model_list = ['Select', 'RNN']
+#rnn_model_list = ['Select', 'RNN']
 predict_days = [2, 3, 4, 5, 6, 7, 14, 28]
 
 #Starting and Welcome to the App
@@ -162,14 +163,14 @@ def sidebar_model(data):
             draw_chart_ml(model, data, column, lags)
             draw_forecast_ml(data, lags, 'xgb')
             
-    elif type_model == 'Deep Learning':
-        
-        rnn_model = st.sidebar.selectbox('Deep Learning Type', rnn_model_list)
-        if rnn_model == 'Select':
-            st.warning('Please choose a Deep Learning Type')
-        else:
-            st.markdown('RNN Model')
-            draw_chart_rnn(data, column, lags)
+    #elif type_model == 'Deep Learning':
+    #    
+    #    rnn_model = st.sidebar.selectbox('Deep Learning Type', rnn_model_list)
+    #    if rnn_model == 'Select':
+    #        st.warning('Please choose a Deep Learning Type')
+    #    else:
+    #        st.markdown('RNN Model')
+    #        draw_chart_rnn(data, column, lags)
 
 
 def draw_chart_rnn(data, column, lags):   

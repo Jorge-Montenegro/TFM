@@ -21,8 +21,9 @@ from sklearn.model_selection import train_test_split
 from sklearn.inspection import permutation_importance
 #Model Prophet
 from prophet import Prophet
-#Model Keras
-from keras import models, layers, metrics, losses, optimizers
+#Model Tensorflow & Keras
+#import keras - Several issues with Tensorflow and Keras
+#from keras import models, layers, metrics, losses, optimizers
 #Model Validation
 from sklearn.model_selection import cross_val_score
 from sklearn.model_selection import KFold
